@@ -23,19 +23,19 @@ class OpenAIClient:
     
     def __init__(self, 
                 api_key: Optional[str] = None, 
-                model: str = "gpt-4o", 
+                model: str = "gpt-4.1-mini", 
                 base_url: Optional[str] = None):
         """
         初始化OpenAI客户端
         
         Args:
             api_key: OpenAI API密钥，如果为None则从环境变量获取
-            model: 使用的模型名称，默认为gpt-4o
+            model: 使用的模型名称，默认为gpt-4.1-mini（智增增平台）
             base_url: API基础URL，用于支持智增增等代理平台，如果为None则从环境变量获取
         """
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
-        self.model = model
+        self.model = os.environ.get("OPENAI_MODEL", model)
         
         # 直接客户端
         client_kwargs = {"api_key": self.api_key}
@@ -66,15 +66,30 @@ class OpenAIClient:
         Returns:
             生成的响应文本
         """
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.7
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7
+            )
+            
+            # 检查响应是否有效
+            if not response or not response.choices:
+                raise ValueError("API返回了空响应")
+            
+            if not response.choices[0].message or not response.choices[0].message.content:
+                raise ValueError("API返回的消息内容为空")
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            print(f"OpenAI API调用失败: {e}")
+            print(f"Model: {self.model}")
+            print(f"Base URL: {self.base_url}")
+            raise
     
     def generate_structured_response(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
         """
