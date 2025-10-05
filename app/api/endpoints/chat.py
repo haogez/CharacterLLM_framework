@@ -41,12 +41,18 @@ async def generate_character(
         # 保存到数据库
         db_character = create_character(db, character_data)
         
-        # 生成记忆
-        memory_generator.generate_memories(db_character, num_memories=8)
+        # 尝试生成记忆（如果失败不影响角色创建）
+        try:
+            memory_generator.generate_memories(db_character, num_memories=8)
+        except Exception as memory_error:
+            print(f"警告：生成记忆失败，但角色已创建成功: {memory_error}")
         
         return db_character
         
     except Exception as e:
+        import traceback
+        error_detail = f"生成角色失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
         raise HTTPException(status_code=500, detail=f"生成角色失败: {str(e)}")
 
 @router.get("/characters", response_model=List[Character])
