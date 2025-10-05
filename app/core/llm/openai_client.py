@@ -107,26 +107,38 @@ class OpenAIClient:
         
         response_text = self.generate_response(enhanced_system_prompt, user_prompt)
         
+        # 调试日志
+        print(f"=== LLM 原始响应 ===")
+        print(response_text[:500] if len(response_text) > 500 else response_text)
+        print(f"=== 响应长度: {len(response_text)} ===")
+        
         try:
             # 尝试解析JSON
-            return json.loads(response_text)
-        except json.JSONDecodeError:
+            parsed = json.loads(response_text)
+            print(f"✓ JSON 解析成功")
+            return parsed
+        except json.JSONDecodeError as e:
+            print(f"✗ JSON 解析失败: {e}")
             # 如果解析失败，尝试提取JSON部分
             try:
                 # 查找可能的JSON部分（在```json和```之间）
                 import re
                 json_match = re.search(r'```json\n(.*?)\n```', response_text, re.DOTALL)
                 if json_match:
+                    print(f"✓ 从 ```json``` 块中提取 JSON")
                     return json.loads(json_match.group(1))
                 
                 # 尝试查找{开头和}结尾的部分
                 json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
                 if json_match:
+                    print(f"✓ 从文本中提取 JSON")
                     return json.loads(json_match.group(1))
                 
                 # 返回文本作为备选
+                print(f"✗ 无法提取有效的 JSON")
                 return {"text": response_text, "error": "Failed to parse JSON"}
             except Exception as e:
+                print(f"✗ JSON 提取失败: {e}")
                 return {"text": response_text, "error": str(e)}
     
     def langchain_generate(self, messages: List[Union[SystemMessage, HumanMessage, AIMessage]]) -> str:
