@@ -102,6 +102,10 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
         # 生成角色
         character_data = character_generator.generate_character(request.description)
         
+        # 检查是否生成成功
+        if "error" in character_data:
+            raise ValueError(f"LLM返回错误: {character_data.get('error')}")
+        
         # 生成角色ID
         import uuid
         character_id = str(uuid.uuid4())
@@ -109,12 +113,15 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
         # 存储角色数据
         characters[character_id] = character_data
         
-        # 在后台生成记忆
-        background_tasks.add_task(
-            generate_and_store_memories,
-            character_id,
-            character_data
-        )
+        # 在后台生成记忆（如果失败不影响角色创建）
+        try:
+            background_tasks.add_task(
+                generate_and_store_memories,
+                character_id,
+                character_data
+            )
+        except Exception as memory_error:
+            print(f"警告：添加记忆生成任务失败: {memory_error}")
         
         # 返回角色数据
         return {
@@ -122,6 +129,9 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
             **character_data
         }
     except Exception as e:
+        import traceback
+        error_detail = f"角色生成失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)
         raise HTTPException(status_code=500, detail=f"角色生成失败: {str(e)}")
 
 @app.get("/api/v1/characters", response_model=List[CharacterResponse])
