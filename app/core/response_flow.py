@@ -75,7 +75,7 @@ class ResponseFlow:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": f"你正在扮演{character.name}，请保持角色的一致性。"},
                     {"role": "user", "content": prompt}
@@ -137,7 +137,7 @@ class ResponseFlow:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": f"你正在扮演{character.name}，现在要基于记忆补充你的回应。"},
                     {"role": "user", "content": prompt}

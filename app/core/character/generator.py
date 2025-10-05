@@ -100,10 +100,22 @@ class CharacterGenerator:
             character_data: 角色数据
         """
         # 确保基本字段存在
-        required_fields = ["name", "age", "gender", "occupation", "background"]
-        for field in required_fields:
-            if field not in character_data:
-                character_data[field] = f"Unknown {field}"
+        if "name" not in character_data:
+            character_data["name"] = "Unknown name"
+        if "age" not in character_data:
+            character_data["age"] = 30  # 默认年龄为整数
+        elif isinstance(character_data["age"], str):
+            # 如果age是字符串，尝试转换为整数
+            try:
+                character_data["age"] = int(character_data["age"])
+            except ValueError:
+                character_data["age"] = 30
+        if "gender" not in character_data:
+            character_data["gender"] = "Unknown gender"
+        if "occupation" not in character_data:
+            character_data["occupation"] = "Unknown occupation"
+        if "background" not in character_data:
+            character_data["background"] = "Unknown background"
         
         # 确保人格特征存在
         if "personality" not in character_data:

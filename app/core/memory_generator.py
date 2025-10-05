@@ -61,7 +61,7 @@ class MemoryGenerator:
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "你是一个专业的角色背景设计师，擅长创建真实、具体的人生经历。"},
                     {"role": "user", "content": prompt}

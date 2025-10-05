@@ -46,7 +46,7 @@ OCEAN五维人格说明：
         
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4.1-mini",
                 messages=[
                     {"role": "system", "content": "你是一个专业的角色设计师，擅长创建详细、一致的角色人设。"},
                     {"role": "user", "content": prompt}
