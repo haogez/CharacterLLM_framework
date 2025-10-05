@@ -2,6 +2,7 @@
 
 一个支持角色建模、记忆管理和智能对话的AI框架，基于大语言模型和向量数据库实现。
 
+本系统已支持智增增平台API代理，详情请参阅 [智增增平台支持指南](ZHIZENGZENG_SUPPORT.md)。
 ## 系统架构
 
 系统由四个核心模块组成：
@@ -14,7 +15,7 @@
 ## 技术栈
 
 - **后端**：FastAPI + Python 3.11
-- **大语言模型**：OpenAI GPT-4
+- **大语言模型**：OpenAI GPT-4（支持智增增平台API代理）
 - **向量数据库**：ChromaDB
 - **前端**：React + TypeScript
 - **数据集**：PersonaHub（角色数据集）
@@ -54,7 +55,11 @@ pip install -r requirements.txt
 3. 设置环境变量
 
 ```bash
-export OPENAI_API_KEY=your_api_key  # Windows: set OPENAI_API_KEY=your_api_key
+```bash
+# 使用智增增平台API
+export OPENAI_API_KEY=your_zhizengzeng_api_key_here
+export OPENAI_BASE_URL=https://api.zhizengzeng.com/v1
+```
 ```
 
 4. 下载数据集（可选）

@@ -2,6 +2,7 @@
 OpenAI API客户端封装模块
 
 提供与OpenAI API交互的封装类，支持角色生成、记忆生成和对话生成等功能。
+支持智增增平台API代理。
 """
 
 import os
@@ -17,28 +18,42 @@ class OpenAIClient:
     OpenAI API客户端封装类
     
     提供对OpenAI API的封装，支持直接调用和通过LangChain调用两种方式
+    支持智增增平台API代理
     """
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
+    def __init__(self, 
+                api_key: Optional[str] = None, 
+                model: str = "gpt-4o", 
+                base_url: Optional[str] = None):
         """
         初始化OpenAI客户端
         
         Args:
             api_key: OpenAI API密钥，如果为None则从环境变量获取
             model: 使用的模型名称，默认为gpt-4o
+            base_url: API基础URL，用于支持智增增等代理平台，如果为None则从环境变量获取
         """
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
         self.model = model
         
         # 直接客户端
-        self.client = OpenAI(api_key=self.api_key)
+        client_kwargs = {"api_key": self.api_key}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+        
+        self.client = OpenAI(**client_kwargs)
         
         # LangChain客户端
-        self.chat_model = ChatOpenAI(
-            model=model,
-            temperature=0.7,
-            openai_api_key=self.api_key
-        )
+        langchain_kwargs = {
+            "model": model,
+            "temperature": 0.7,
+            "openai_api_key": self.api_key
+        }
+        if self.base_url:
+            langchain_kwargs["openai_api_base"] = self.base_url
+        
+        self.chat_model = ChatOpenAI(**langchain_kwargs)
     
     def generate_response(self, system_prompt: str, user_prompt: str) -> str:
         """
@@ -241,7 +256,7 @@ class CharacterLLM:
         if relevant_memories:
             memories_text = "Relevant memories (use these to inform your response):\n"
             for memory in relevant_memories:
-                memories_text += f"- {memory['title']}: {memory['content']}\n"
+                memories_text += f"- {memory.get('title', '')}: {memory.get('content', '')}\n"
         
         # 构建用户提示
         user_prompt = f"{history_text}\n{memories_text}\nUser: {user_input}\n\nRespond as the character:"
@@ -251,14 +266,16 @@ class CharacterLLM:
 
 # 测试代码
 if __name__ == "__main__":
-    # 设置API密钥
+    # 设置API密钥和基础URL
     api_key = os.environ.get("OPENAI_API_KEY")
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    
     if not api_key:
         print("请设置OPENAI_API_KEY环境变量")
         exit(1)
     
     # 创建客户端
-    character_llm = CharacterLLM(OpenAIClient(api_key=api_key))
+    character_llm = CharacterLLM(OpenAIClient(api_key=api_key, base_url=base_url))
     
     # 测试角色生成
     character = character_llm.generate_character("一位生活在90年代上海的退休语文教师，性格温和，喜欢读书写字")
