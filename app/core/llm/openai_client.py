@@ -199,14 +199,29 @@ class CharacterLLM:
         """
         system_prompt = """
         You are a character creation assistant. Your task is to create a detailed character profile based on the given description.
-        The character profile should include:
-        1. Basic information (name, age, gender, occupation, etc.)
-        2. OCEAN personality traits (openness, conscientiousness, extraversion, agreeableness, neuroticism) with scores from 0-100
-        3. Background story
-        4. Values and beliefs
-        5. Speech patterns and language style
         
-        Respond with a JSON object containing these details.
+        Respond with a JSON object in EXACTLY this format (no nested objects):
+        {
+          "name": "character's name",
+          "age": 35,
+          "gender": "male/female/other",
+          "occupation": "character's occupation",
+          "background": "detailed background story",
+          "speech_style": "description of how the character speaks",
+          "personality": {
+            "openness": 65,
+            "conscientiousness": 75,
+            "extraversion": 55,
+            "agreeableness": 80,
+            "neuroticism": 40
+          }
+        }
+        
+        IMPORTANT: 
+        - Use the exact field names shown above
+        - personality scores should be integers from 0-100
+        - Do not use nested objects except for "personality"
+        - Respond ONLY with the JSON, no additional text
         """
         
         user_prompt = f"Create a character based on this description: {description}"
