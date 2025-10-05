@@ -1,305 +1,294 @@
-import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/button.jsx'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Input } from '@/components/ui/input.jsx'
-import { Textarea } from '@/components/ui/textarea.jsx'
-import { Badge } from '@/components/ui/badge.jsx'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
-import { ScrollArea } from '@/components/ui/scroll-area.jsx'
-import { Separator } from '@/components/ui/separator.jsx'
-import { User, Bot, Plus, MessageCircle, Brain, Database } from 'lucide-react'
-import './App.css'
+import React, { useState, useEffect } from 'react';
+import './App.css';
 
-// 使用相对路径，这样前端会自动向当前域名发送API请求
-const API_BASE_URL = '/api/v1'
+const API_BASE_URL = '/api/v1';
 
 function App() {
-  const [characters, setCharacters] = useState([])
-  const [selectedCharacter, setSelectedCharacter] = useState(null)
-  const [chatMessages, setChatMessages] = useState([])
-  const [newMessage, setNewMessage] = useState('')
-  const [characterDescription, setCharacterDescription] = useState('')
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [isSending, setIsSending] = useState(false)
-  const [activeTab, setActiveTab] = useState('create')
+  const [activeTab, setActiveTab] = useState('create');
+  const [characters, setCharacters] = useState([]);
+  const [description, setDescription] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
+  const [selectedCharacter, setSelectedCharacter] = useState('');
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatHistory, setChatHistory] = useState([]);
 
-  // 获取所有角色
-  const fetchCharacters = async () => {
+  useEffect(() => {
+    loadCharacters();
+  }, []);
+
+  const loadCharacters = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/characters`)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      const data = await response.json()
-      setCharacters(data)
+      const response = await fetch(`${API_BASE_URL}/characters`);
+      const data = await response.json();
+      setCharacters(data);
     } catch (error) {
-      console.error('获取角色列表失败:', error)
+      console.error('加载角色失败:', error);
     }
-  }
+  };
 
-  // 生成角色
   const generateCharacter = async () => {
-    if (!characterDescription.trim()) return
-    
-    setIsGenerating(true)
+    if (!description.trim()) {
+      setMessage({ type: 'error', text: '请输入角色描述' });
+      return;
+    }
+
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+
     try {
       const response = await fetch(`${API_BASE_URL}/characters/generate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ description: characterDescription }),
-      })
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      setCharacters(prev => [...prev, data])
-      setCharacterDescription('')
-      setActiveTab('manage')
-    } catch (error) {
-      console.error('生成角色失败:', error)
-    } finally {
-      setIsGenerating(false)
-    }
-  }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description })
+      });
 
-  // 发送消息
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !selectedCharacter) return
-    
-    const userMessage = {
-      role: 'user',
-      content: newMessage,
+      if (!response.ok) throw new Error('生成失败');
+
+      const data = await response.json();
+      setMessage({ type: 'success', text: '角色生成成功！' });
+      setDescription('');
+      loadCharacters();
+    } catch (error) {
+      setMessage({ type: 'error', text: `生成失败: ${error.message}` });
+    } finally {
+      setLoading(false);
     }
-    
-    setChatMessages(prev => [...prev, userMessage])
-    setNewMessage('')
-    setIsSending(true)
-    
+  };
+
+  const sendMessage = async () => {
+    if (!selectedCharacter) {
+      alert('请先选择角色');
+      return;
+    }
+    if (!chatMessage.trim()) return;
+
+    const userMessage = chatMessage;
+    setChatHistory([...chatHistory, { role: 'user', content: userMessage }]);
+    setChatMessage('');
+
     try {
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          character_id: selectedCharacter.id,
-          message: userMessage.content,
-          conversation_history: chatMessages,
-        }),
-      })
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-      
-      // 添加下意识响应
-      if (data.instinctive_response) {
-        setChatMessages(prev => [...prev, {
-          role: 'assistant',
-          content: data.instinctive_response,
-          type: 'instinctive'
-        }])
-      }
-      
-      // 如果有补充响应，等待一段时间后添加
-      if (data.supplementary_response) {
-        setTimeout(() => {
-          setChatMessages(prev => [...prev, {
-            role: 'assistant',
-            content: data.supplementary_response,
-            type: 'supplementary'
-          }])
-        }, 2000)
-      }
+          character_id: selectedCharacter,
+          message: userMessage
+        })
+      });
+
+      if (!response.ok) throw new Error('对话失败');
+
+      const data = await response.json();
+      setChatHistory(prev => [...prev, { role: 'assistant', content: data.response }]);
     } catch (error) {
-      console.error('发送消息失败:', error)
-      setChatMessages(prev => [...prev, {
-        role: 'system',
-        content: '消息发送失败，请重试。',
-      }])
-    } finally {
-      setIsSending(false)
+      setChatHistory(prev => [...prev, { role: 'error', content: `错误: ${error.message}` }]);
     }
-  }
-
-  // 选择角色
-  const selectCharacter = (character) => {
-    setSelectedCharacter(character)
-    setChatMessages([])
-    setActiveTab('chat')
-  }
-
-  // 初始加载
-  useEffect(() => {
-    fetchCharacters()
-  }, [])
+  };
 
   return (
-    <div className="container">
-      <header className="header">
-        <h1>角色化大语言模型知识库管理系统</h1>
-      </header>
-      
-      <main className="main">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="tabs">
-          <TabsList className="tabs-list">
-            <TabsTrigger value="create">
-              <Plus className="icon" />
-              创建角色
-            </TabsTrigger>
-            <TabsTrigger value="manage">
-              <Database className="icon" />
-              角色管理
-            </TabsTrigger>
-            <TabsTrigger value="chat" disabled={!selectedCharacter}>
-              <MessageCircle className="icon" />
-              智能对话
-            </TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="create" className="tab-content">
-            <Card>
-              <CardHeader>
-                <CardTitle>创建新角色</CardTitle>
-                <CardDescription>
-                  输入角色描述，系统将自动生成角色人设和记忆
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+    <div className="app">
+      <div className="container">
+        <header className="header">
+          <div className="header-content">
+            <div className="logo">
+              <span className="logo-icon">🤖</span>
+              <h1>角色化大语言模型知识库管理系统</h1>
+            </div>
+            <p className="subtitle">基于大语言模型的智能角色生成与对话系统</p>
+          </div>
+        </header>
+
+        <div className="tabs">
+          <button
+            className={`tab ${activeTab === 'create' ? 'active' : ''}`}
+            onClick={() => setActiveTab('create')}
+          >
+            <span className="tab-icon">✨</span>
+            创建角色
+          </button>
+          <button
+            className={`tab ${activeTab === 'list' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('list'); loadCharacters(); }}
+          >
+            <span className="tab-icon">📚</span>
+            角色列表
+          </button>
+          <button
+            className={`tab ${activeTab === 'chat' ? 'active' : ''}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            <span className="tab-icon">💬</span>
+            智能对话
+          </button>
+        </div>
+
+        <div className="content">
+          {activeTab === 'create' && (
+            <div className="tab-content">
+              <div className="card">
+                <h2 className="card-title">创建新角色</h2>
+                <p className="card-description">
+                  输入角色描述，AI将自动生成完整的角色档案，包括性格特征、背景故事等
+                </p>
+                
                 <div className="form-group">
-                  <label htmlFor="character-description">角色描述</label>
-                  <Textarea
-                    id="character-description"
-                    placeholder="例如：一位生活在90年代上海的退休语文教师，性格温和，喜欢读书写字"
-                    value={characterDescription}
-                    onChange={(e) => setCharacterDescription(e.target.value)}
-                    rows={5}
+                  <label>角色描述</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="例如：一位35岁的女医生，温柔善良，喜欢帮助他人，有丰富的临床经验..."
+                    rows="5"
+                    disabled={loading}
                   />
                 </div>
-                <Button 
-                  onClick={generateCharacter} 
-                  disabled={isGenerating || !characterDescription.trim()}
-                  className="submit-button"
+
+                {message.text && (
+                  <div className={`message ${message.type}`}>
+                    {message.text}
+                  </div>
+                )}
+
+                <button
+                  className="btn btn-primary"
+                  onClick={generateCharacter}
+                  disabled={loading}
                 >
-                  {isGenerating ? '生成中...' : '生成角色'}
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          <TabsContent value="manage" className="tab-content">
-            <Card>
-              <CardHeader>
-                <CardTitle>角色管理</CardTitle>
-                <CardDescription>
-                  查看和管理已创建的角色
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+                  {loading ? (
+                    <>
+                      <span className="spinner"></span>
+                      生成中...
+                    </>
+                  ) : (
+                    <>
+                      <span>✨</span>
+                      生成角色
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'list' && (
+            <div className="tab-content">
+              <div className="card">
+                <div className="card-header">
+                  <h2 className="card-title">角色列表</h2>
+                  <button className="btn btn-secondary" onClick={loadCharacters}>
+                    🔄 刷新
+                  </button>
+                </div>
+
                 {characters.length === 0 ? (
                   <div className="empty-state">
-                    <p>暂无角色，请先创建角色</p>
-                    <Button onClick={() => setActiveTab('create')}>创建角色</Button>
+                    <div className="empty-icon">📭</div>
+                    <h3>还没有创建角色</h3>
+                    <p>点击"创建角色"标签页开始创建您的第一个角色吧！</p>
                   </div>
                 ) : (
-                  <div className="character-list">
-                    {characters.map((character) => (
-                      <div key={character.id} className="character-item">
+                  <div className="character-grid">
+                    {characters.map((char) => (
+                      <div key={char.id} className="character-card">
+                        <div className="character-header">
+                          <h3>{char.name}</h3>
+                          <span className="character-badge">{char.occupation}</span>
+                        </div>
                         <div className="character-info">
-                          <h3>{character.name}</h3>
-                          <p>{character.occupation}, {character.age}岁</p>
-                          <div className="personality">
-                            <Badge>开放性: {character.personality?.openness || 0}</Badge>
-                            <Badge>尽责性: {character.personality?.conscientiousness || 0}</Badge>
-                            <Badge>外向性: {character.personality?.extraversion || 0}</Badge>
-                            <Badge>宜人性: {character.personality?.agreeableness || 0}</Badge>
-                            <Badge>神经质: {character.personality?.neuroticism || 0}</Badge>
+                          <div className="info-item">
+                            <span className="info-label">年龄</span>
+                            <span className="info-value">{char.age}岁</span>
+                          </div>
+                          <div className="info-item">
+                            <span className="info-label">性别</span>
+                            <span className="info-value">{char.gender}</span>
                           </div>
                         </div>
-                        <Button onClick={() => selectCharacter(character)}>开始对话</Button>
+                        <div className="character-background">
+                          <p><strong>背景：</strong>{char.background}</p>
+                        </div>
+                        {char.speech_style && (
+                          <div className="character-style">
+                            <p><strong>语言风格：</strong>{char.speech_style}</p>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          <TabsContent value="chat" className="tab-content">
-            {selectedCharacter && (
-              <div className="chat-container">
-                <div className="chat-header">
-                  <div className="character-brief">
-                    <h2>{selectedCharacter.name}</h2>
-                    <p>{selectedCharacter.occupation}, {selectedCharacter.age}岁</p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'chat' && (
+            <div className="tab-content">
+              <div className="card">
+                <h2 className="card-title">智能对话</h2>
+                
+                <div className="form-group">
+                  <label>选择角色</label>
+                  <select
+                    value={selectedCharacter}
+                    onChange={(e) => {
+                      setSelectedCharacter(e.target.value);
+                      setChatHistory([]);
+                    }}
+                  >
+                    <option value="">请选择一个角色</option>
+                    {characters.map((char) => (
+                      <option key={char.id} value={char.id}>
+                        {char.name} - {char.occupation}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="chat-container">
+                  <div className="chat-history">
+                    {chatHistory.length === 0 ? (
+                      <div className="chat-empty">
+                        <div className="chat-empty-icon">💭</div>
+                        <p>选择角色后开始对话</p>
+                      </div>
+                    ) : (
+                      chatHistory.map((msg, index) => (
+                        <div key={index} className={`chat-message ${msg.role}`}>
+                          <div className="message-content">{msg.content}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="chat-input-container">
+                    <input
+                      type="text"
+                      className="chat-input"
+                      value={chatMessage}
+                      onChange={(e) => setChatMessage(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      placeholder="输入消息..."
+                      disabled={!selectedCharacter}
+                    />
+                    <button
+                      className="btn btn-primary btn-send"
+                      onClick={sendMessage}
+                      disabled={!selectedCharacter || !chatMessage.trim()}
+                    >
+                      发送 📤
+                    </button>
                   </div>
                 </div>
-                
-                <ScrollArea className="chat-messages">
-                  {chatMessages.length === 0 ? (
-                    <div className="chat-empty">
-                      <Brain size={48} />
-                      <p>开始与{selectedCharacter.name}对话吧！</p>
-                    </div>
-                  ) : (
-                    chatMessages.map((msg, index) => (
-                      <div 
-                        key={index} 
-                        className={`message ${msg.role === 'user' ? 'user-message' : 'assistant-message'}`}
-                      >
-                        <div className="message-avatar">
-                          {msg.role === 'user' ? <User /> : <Bot />}
-                        </div>
-                        <div className="message-content">
-                          {msg.type === 'supplementary' && (
-                            <Badge variant="outline" className="message-badge">
-                              补充回复
-                            </Badge>
-                          )}
-                          {msg.type === 'instinctive' && (
-                            <Badge variant="outline" className="message-badge">
-                              即时回复
-                            </Badge>
-                          )}
-                          <p>{msg.content}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </ScrollArea>
-                
-                <div className="chat-input">
-                  <Input
-                    placeholder={`向${selectedCharacter.name}发送消息...`}
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                    disabled={isSending}
-                  />
-                  <Button 
-                    onClick={sendMessage} 
-                    disabled={isSending || !newMessage.trim()}
-                  >
-                    {isSending ? '发送中...' : '发送'}
-                  </Button>
-                </div>
               </div>
-            )}
-          </TabsContent>
-        </Tabs>
-      </main>
-      
-      <footer className="footer">
-        <p>角色化大语言模型知识库管理系统 &copy; 2025</p>
-      </footer>
+            </div>
+          )}
+        </div>
+
+        <footer className="footer">
+          <p>角色化大语言模型知识库管理系统 © 2025</p>
+        </footer>
+      </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
