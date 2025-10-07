@@ -62,6 +62,7 @@ echo "🛑 [3/6] 停止前端服务..."
 # 停止 Nginx
 if pgrep nginx > /dev/null; then
     service nginx stop
+    pkill -9 nginx 2>/dev/null
     echo "✅ Nginx 已停止"
 else
     echo "ℹ️  Nginx 未运行"
