@@ -85,12 +85,14 @@ class ResponseFlow:
             "memories": memories
         }
     
-    async def _generate_immediate_response(self, 
+    async def _generate_immediate_response(self,
                                          character_data: Dict[str, Any],
                                          user_input: str,
                                          conversation_history: List[Dict[str, str]] = None) -> str:
         """
-        生成下意识快速响应
+        生成下意识快速响应（极速版）
+        
+        只基于角色人设和最近1轮对话，确保响应速度极快
         
         Args:
             character_data: 角色数据
@@ -100,20 +102,19 @@ class ResponseFlow:
         Returns:
             生成的响应文本
         """
-        # 创建一个简化的对话历史，只包含最近的几轮对话
+        # 只使用最近1轮对话，确保极快响应
         recent_history = None
         if conversation_history:
-            recent_history = conversation_history[-6:]  # 最近3轮对话
+            recent_history = conversation_history[-2:]  # 只取最近1轮（用户+AI各1条）
         
-        # 使用角色LLM生成响应
+        # 使用简化的 prompt 生成快速响应
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: self.character_llm.generate_dialogue_response(
+            lambda: self.character_llm.generate_quick_response(
                 character_data=character_data,
                 user_input=user_input,
-                conversation_history=recent_history,
-                relevant_memories=None  # 下意识响应不使用记忆
+                conversation_history=recent_history
             )
         )
         

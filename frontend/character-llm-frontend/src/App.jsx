@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 
 const API_BASE_URL = '/api/v1';
@@ -56,6 +56,31 @@ function App() {
     }
   };
 
+  const deleteCharacter = async (characterId) => {
+    if (!confirm('确定要删除这个角色吗？')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/characters/${characterId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) throw new Error('删除失败');
+
+      setMessage({ type: 'success', text: '角色删除成功！' });
+      loadCharacters();
+      
+      // 如果删除的是当前选中的角色，清空选择
+      if (selectedCharacter === characterId) {
+        setSelectedCharacter('');
+        setChatHistory([]);
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: `删除失败: ${error.message}` });
+    }
+  };
+
   const sendMessage = async () => {
     if (!selectedCharacter) {
       alert('请先选择角色');
@@ -73,7 +98,8 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           character_id: selectedCharacter,
-          message: userMessage
+          message: userMessage,
+          conversation_history: chatHistory
         })
       });
 
@@ -104,50 +130,52 @@ function App() {
             className={`tab ${activeTab === 'create' ? 'active' : ''}`}
             onClick={() => setActiveTab('create')}
           >
-            <span className="tab-icon">✨</span>
+            <span>✨</span>
             创建角色
           </button>
           <button
             className={`tab ${activeTab === 'list' ? 'active' : ''}`}
-            onClick={() => { setActiveTab('list'); loadCharacters(); }}
+            onClick={() => setActiveTab('list')}
           >
-            <span className="tab-icon">📚</span>
+            <span>📋</span>
             角色列表
           </button>
           <button
             className={`tab ${activeTab === 'chat' ? 'active' : ''}`}
             onClick={() => setActiveTab('chat')}
           >
-            <span className="tab-icon">💬</span>
+            <span>💬</span>
             智能对话
           </button>
         </div>
 
-        <div className="content">
+        <main className="main-content">
+          {message.text && (
+            <div className={`message ${message.type}`}>
+              {message.text}
+            </div>
+          )}
+
           {activeTab === 'create' && (
             <div className="tab-content">
               <div className="card">
                 <h2 className="card-title">创建新角色</h2>
                 <p className="card-description">
-                  输入角色描述，AI将自动生成完整的角色档案，包括性格特征、背景故事等
+                  输入角色描述，系统将自动生成详细的角色档案，
+
+包括性格、背景、语言风格等。
                 </p>
-                
+
                 <div className="form-group">
-                  <label>角色描述</label>
+                  <label htmlFor="description">角色描述</label>
                   <textarea
+                    id="description"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="例如：一位35岁的女医生，温柔善良，喜欢帮助他人，有丰富的临床经验..."
+                    placeholder="例如：一位35岁的女医生，温柔体贴，有丰富的临床经验..."
                     rows="5"
-                    disabled={loading}
                   />
                 </div>
-
-                {message.text && (
-                  <div className={`message ${message.type}`}>
-                    {message.text}
-                  </div>
-                )}
 
                 <button
                   className="btn btn-primary"
@@ -192,8 +220,18 @@ function App() {
                       <div key={char.id} className="character-card">
                         <div className="character-header">
                           <h3>{char.name}</h3>
-                          <span className="character-badge">{char.occupation}</span>
+                          <div className="character-header-actions">
+                            <span className="character-badge">{char.occupation}</span>
+                            <button
+                              className="btn-delete"
+                              onClick={() => deleteCharacter(char.id)}
+                              title="删除角色"
+                            >
+                              🗑️
+                            </button>
+                          </div>
                         </div>
+                        
                         <div className="character-info">
                           <div className="info-item">
                             <span className="info-label">年龄</span>
@@ -204,12 +242,74 @@ function App() {
                             <span className="info-value">{char.gender}</span>
                           </div>
                         </div>
-                        <div className="character-background">
-                          <p><strong>背景：</strong>{char.background}</p>
+                        
+                        <div className="character-section">
+                          <h4>背景故事</h4>
+                          <p>{char.background}</p>
                         </div>
+                        
                         {char.speech_style && (
-                          <div className="character-style">
-                            <p><strong>语言风格：</strong>{char.speech_style}</p>
+                          <div className="character-section">
+                            <h4>语言风格</h4>
+                            <p>{char.speech_style}</p>
+                          </div>
+                        )}
+                        
+                        {char.personality && (
+                          <div className="character-section">
+                            <h4>性格特征 (OCEAN模型)</h4>
+                            <div className="personality-traits">
+                              <div className="trait-item">
+                                <span className="trait-label">开放性</span>
+                                <div className="trait-bar">
+                                  <div 
+                                    className="trait-fill" 
+                                    style={{width: `${char.personality.openness}%`}}
+                                  ></div>
+                                </div>
+                                <span className="trait-value">{char.personality.openness}</span>
+                              </div>
+                              <div className="trait-item">
+                                <span className="trait-label">尽责性</span>
+                                <div className="trait-bar">
+                                  <div 
+                                    className="trait-fill" 
+                                    style={{width: `${char.personality.conscientiousness}%`}}
+                                  ></div>
+                                </div>
+                                <span className="trait-value">{char.personality.conscientiousness}</span>
+                              </div>
+                              <div className="trait-item">
+                                <span className="trait-label">外向性</span>
+                                <div className="trait-bar">
+                                  <div 
+                                    className="trait-fill" 
+                                    style={{width: `${char.personality.extraversion}%`}}
+                                  ></div>
+                                </div>
+                                <span className="trait-value">{char.personality.extraversion}</span>
+                              </div>
+                              <div className="trait-item">
+                                <span className="trait-label">宜人性</span>
+                                <div className="trait-bar">
+                                  <div 
+                                    className="trait-fill" 
+                                    style={{width: `${char.personality.agreeableness}%`}}
+                                  ></div>
+                                </div>
+                                <span className="trait-value">{char.personality.agreeableness}</span>
+                              </div>
+                              <div className="trait-item">
+                                <span className="trait-label">神经质</span>
+                                <div className="trait-bar">
+                                  <div 
+                                    className="trait-fill" 
+                                    style={{width: `${char.personality.neuroticism}%`}}
+                                  ></div>
+                                </div>
+                                <span className="trait-value">{char.personality.neuroticism}</span>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -248,7 +348,7 @@ function App() {
                     {chatHistory.length === 0 ? (
                       <div className="chat-empty">
                         <div className="chat-empty-icon">💭</div>
-                        <p>选择角色后开始对话</p>
+                        <p>开始与角色对话吧！</p>
                       </div>
                     ) : (
                       chatHistory.map((msg, index) => (
@@ -262,7 +362,6 @@ function App() {
                   <div className="chat-input-container">
                     <input
                       type="text"
-                      className="chat-input"
                       value={chatMessage}
                       onChange={(e) => setChatMessage(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
@@ -270,21 +369,21 @@ function App() {
                       disabled={!selectedCharacter}
                     />
                     <button
-                      className="btn btn-primary btn-send"
+                      className="btn btn-primary"
                       onClick={sendMessage}
                       disabled={!selectedCharacter || !chatMessage.trim()}
                     >
-                      发送 📤
+                      发送
                     </button>
                   </div>
                 </div>
               </div>
             </div>
           )}
-        </div>
+        </main>
 
         <footer className="footer">
-          <p>角色化大语言模型知识库管理系统 © 2025</p>
+          <p>© 2024 角色化大语言模型知识库管理系统 | 基于 FastAPI + React</p>
         </footer>
       </div>
     </div>

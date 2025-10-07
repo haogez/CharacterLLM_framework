@@ -509,3 +509,92 @@ body {
     max-width: 85%;
   }
 }
+
+
+/* 删除按钮样式 */
+.btn-delete {
+  background: #ff4757;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  margin-left: 10px;
+}
+
+.btn-delete:hover {
+  background: #ff3838;
+  transform: scale(1.1);
+}
+
+.character-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 角色详情部分样式 */
+.character-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.character-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #667eea;
+  margin-bottom: 10px;
+}
+
+.character-section p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #555;
+}
+
+/* 性格特征样式 */
+.personality-traits {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trait-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trait-label {
+  min-width: 60px;
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.trait-bar {
+  flex: 1;
+  height: 20px;
+  background: #f0f0f0;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+
+.trait-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 10px;
+  transition: width 0.5s ease;
+}
+
+.trait-value {
+  min-width: 35px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: #667eea;
+}

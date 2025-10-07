@@ -198,16 +198,16 @@ class CharacterLLM:
             角色数据字典
         """
         system_prompt = """
-        You are a character creation assistant. Your task is to create a detailed character profile based on the given description.
+        你是一个角色创建助手。你的任务是根据给定的描述创建详细的角色档案。
         
-        Respond with a JSON object in EXACTLY this format (no nested objects):
+        请用 JSON 格式回复，格式如下（除了 personality 外不要使用嵌套对象）：
         {
-          "name": "character's name",
+          "name": "角色的中文名字",
           "age": 35,
-          "gender": "male/female/other",
-          "occupation": "character's occupation",
-          "background": "detailed background story",
-          "speech_style": "description of how the character speaks",
+          "gender": "男/女/其他",
+          "occupation": "角色的职业",
+          "background": "详细的背景故事（中文，至少100字）",
+          "speech_style": "角色的说话风格描述（中文）",
           "personality": {
             "openness": 65,
             "conscientiousness": 75,
@@ -217,14 +217,17 @@ class CharacterLLM:
           }
         }
         
-        IMPORTANT: 
-        - Use the exact field names shown above
-        - personality scores should be integers from 0-100
-        - Do not use nested objects except for "personality"
-        - Respond ONLY with the JSON, no additional text
+        重要要求：
+        - 所有文本内容必须使用中文
+        - 使用上面显示的确切字段名
+        - personality 分数应为 0-100 的整数
+        - 除了 "personality" 外不要使用嵌套对象
+        - 只回复 JSON，不要有其他文本
+        - 背景故事要详细生动，至少100字
+        - 说话风格要具体描述语气、用词特点
         """
         
-        user_prompt = f"Create a character based on this description: {description}"
+        user_prompt = f"请根据以下描述创建一个角色：{description}"
         
         return self.client.generate_structured_response(system_prompt, user_prompt)
     
@@ -257,13 +260,68 @@ class CharacterLLM:
         
         return self.client.generate_structured_response(system_prompt, user_prompt)
     
+    def generate_quick_response(self,
+                               character_data: Dict[str, Any],
+                               user_input: str,
+                               conversation_history: List[Dict[str, str]] = None) -> str:
+        """
+        生成快速响应（第一阶段）
+        
+        只基于角色人设和最近对话，不使用记忆，确保极快响应
+        
+        Args:
+            character_data: 角色数据
+            user_input: 用户输入
+            conversation_history: 对话历史（只使用最近1-2轮）
+            
+        Returns:
+            生成的响应文本
+        """
+        # 提取关键角色信息
+        name = character_data.get('name', '角色')
+        gender = character_data.get('gender', '未知')
+        occupation = character_data.get('occupation', '未知')
+        speech_style = character_data.get('speech_style', '自然流畅')
+        personality = character_data.get('personality', {})
+        
+        # 构建简化的系统提示
+        system_prompt = f"""
+        你正在扮演一个角色，请根据以下人设快速回复用户：
+        
+        姓名：{name}
+        性别：{gender}
+        职业：{occupation}
+        说话风格：{speech_style}
+        性格特点：开放性{personality.get('openness', 50)}/100，外向性{personality.get('extraversion', 50)}/100
+        
+        要求：
+        - 用中文回复
+        - 保持角色的说话风格
+        - 回复简短自然（1-2句话）
+        - 直接回答，不要过度思考
+        """
+        
+        # 添加最近对话（如果有）
+        history_text = ""
+        if conversation_history and len(conversation_history) > 0:
+            last_msg = conversation_history[-1]
+            if last_msg.get("role") == "user":
+                history_text = f"\n上一句：{last_msg.get('content', '')}"
+        
+        # 构建用户提示
+        user_prompt = f"{history_text}\n用户说：{user_input}\n\n请快速回复："
+        
+        return self.client.generate_response(system_prompt, user_prompt)
+    
     def generate_dialogue_response(self, 
                                   character_data: Dict[str, Any], 
                                   user_input: str, 
                                   conversation_history: List[Dict[str, str]] = None,
                                   relevant_memories: List[Dict[str, Any]] = None) -> str:
         """
-        生成对话响应
+        生成完整对话响应（第三阶段）
+        
+        基于角色人设、对话历史和相关记忆生成详细响应
         
         Args:
             character_data: 角色数据
@@ -277,31 +335,37 @@ class CharacterLLM:
         # 构建系统提示
         character_info = json.dumps(character_data, ensure_ascii=False, indent=2)
         system_prompt = f"""
-        You are roleplaying as the character described below. Respond to the user's input in a way that is consistent with this character's personality, background, values, and speech patterns.
+        你正在扮演以下角色，请根据角色的性格、背景和说话风格来回复用户。
         
-        Character information:
+        角色信息：
         {character_info}
+        
+        要求：
+        - 用中文回复
+        - 保持角色的性格特点和说话风格
+        - 结合角色的背景和记忆
+        - 回复要自然、有深度
         """
         
         # 添加对话历史
         history_text = ""
         if conversation_history:
-            history_text = "Conversation history:\n"
-            for msg in conversation_history:
+            history_text = "\n对话历史：\n"
+            for msg in conversation_history[-6:]:  # 最近3轮
                 if msg["role"] == "user":
-                    history_text += f"User: {msg['content']}\n"
+                    history_text += f"用户：{msg['content']}\n"
                 else:
-                    history_text += f"Character: {msg['content']}\n"
+                    history_text += f"{character_data.get('name', '角色')}：{msg['content']}\n"
         
         # 添加相关记忆
         memories_text = ""
         if relevant_memories:
-            memories_text = "Relevant memories (use these to inform your response):\n"
+            memories_text = "\n相关记忆（可以在回复中体现）：\n"
             for memory in relevant_memories:
                 memories_text += f"- {memory.get('title', '')}: {memory.get('content', '')}\n"
         
         # 构建用户提示
-        user_prompt = f"{history_text}\n{memories_text}\nUser: {user_input}\n\nRespond as the character:"
+        user_prompt = f"{history_text}\n{memories_text}\n用户：{user_input}\n\n请作为{character_data.get('name', '角色')}回复："
         
         return self.client.generate_response(system_prompt, user_prompt)
 
