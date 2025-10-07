@@ -598,3 +598,32 @@ body {
   font-weight: 600;
   color: #667eea;
 }
+
+/* 思考中和记忆检索状态样式 */
+.chat-message.thinking,
+.chat-message.memory-searching {
+  justify-content: flex-start;
+}
+
+.chat-message.thinking .message-content,
+.chat-message.memory-searching .message-content {
+  background: #f0f0f0;
+  color: #666;
+  font-style: italic;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.chat-message.memory-searching .message-content {
+  background: #e3f2fd;
+  color: #1976d2;
+  border-left: 3px solid #2196f3;
+}

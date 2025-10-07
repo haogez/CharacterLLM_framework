@@ -135,6 +135,15 @@ class ResponseFlow:
         Returns:
             记忆列表
         """
+        print(f"\n{'='*50}")
+        print(f"开始记忆检索")
+        print(f"角色ID: {character_id}")
+        print(f"查询文本: {query_text}")
+        print(f"请求数量: {n_results}")
+        print(f"{'='*50}\n")
+        
+        start_time = time.time()
+        
         # 使用记忆存储检索记忆
         loop = asyncio.get_event_loop()
         memories = await loop.run_in_executor(
@@ -146,8 +155,18 @@ class ResponseFlow:
             )
         )
         
+        elapsed_time = time.time() - start_time
+        
+        print(f"\n{'='*50}")
+        print(f"记忆检索完成")
+        print(f"耗时: {elapsed_time:.2f} 秒")
+        print(f"检索到 {len(memories)} 条记忆")
+        print(f"{'='*50}\n")
+        
         # 过滤掉相关性较低的记忆
         relevant_memories = [m for m in memories if m.get("relevance", 0) > 0.6]
+        
+        print(f"过滤后保留 {len(relevant_memories)} 条高相关性记忆 (relevance > 0.6)")
         
         return relevant_memories
     
@@ -170,38 +189,69 @@ class ResponseFlow:
         Returns:
             生成的补充响应文本
         """
-        # 构建系统提示
+        print(f"\n{'='*50}")
+        print(f"开始生成补充响应")
+        print(f"检索到 {len(memories)} 条相关记忆")
+        print(f"{'='*50}\n")
+        
+        # 构建记忆文本
+        memories_list = []
+        for i, m in enumerate(memories, 1):
+            memory_text = f"""
+记忆 {i}:
+标题: {m.get('title', '无标题')}
+内容: {m.get('content', '')}
+时间: {m.get('time', '未知')}
+情感: {m.get('emotion', '中性')}
+重要性: {m.get('importance', 5)}/10
+相关性: {m.get('relevance', 0):.2f}
+"""
+            memories_list.append(memory_text)
+            print(memory_text)
+        
+        memories_text = "\n".join(memories_list)
+        
+        # 构建系统提示（中文）
         system_prompt = f"""
-        You are roleplaying as the character described below. The user has asked a question, and you have already provided an initial response.
-        Now you have access to some relevant memories that might help you provide a more detailed or accurate response.
-        
-        Your task is to provide a supplementary response that:
-        1. Builds upon your initial response
-        2. Incorporates the relevant memories naturally
-        3. Maintains the character's personality and speech patterns
-        4. Does NOT contradict your initial response
-        5. Does NOT explicitly mention that these are "memories" or that you're providing a "supplementary response"
-        
-        If the memories don't add significant value to your initial response, you can respond with "NONE" to indicate no supplementary response is needed.
-        """
+你正在扮演以下角色进行对话。用户问了一个问题，你已经给出了初步回答。
+现在你检索到了一些相关的个人记忆，可以帮助你提供更详细、更真实的回答。
+
+角色信息：
+姓名：{character_data.get('name', '')}
+年龄：{character_data.get('age', '')}
+职业：{character_data.get('occupation', '')}
+背景：{character_data.get('background', '')}
+说话风格：{character_data.get('speech_style', '')}
+
+你的任务是基于这些记忆生成一个补充响应，要求：
+1. 完全重写你的回答，不要简单地在初步回答后面添加内容
+2. 深入展开记忆中的细节，让回答更加生动、具体、真实
+3. 自然地融入记忆内容，就像在回忆往事一样
+4. 保持角色的性格和说话风格
+5. 回答要比初步回答更详细、更有深度（至少200字）
+6. 不要提及"记忆"、"补充"等元信息
+7. 如果记忆与问题高度相关，就详细讲述这段经历
+
+重要：这是一个完整的新回答，不是对初步回答的补充！
+"""
         
         # 构建用户提示
-        memories_text = "\n\n".join([f"Memory: {m.get('content', '')}" for m in memories])
         user_prompt = f"""
-        Character information:
-        {character_data}
+用户问题：
+{user_input}
+
+你的初步回答：
+{immediate_response}
+
+检索到的相关记忆：
+{memories_text}
+
+现在，请基于这些记忆，重新生成一个更详细、更深入的完整回答：
+"""
         
-        User question:
-        {user_input}
-        
-        Your initial response:
-        {immediate_response}
-        
-        Relevant memories:
-        {memories_text}
-        
-        Based on these memories, provide a supplementary response:
-        """
+        print(f"\n{'='*50}")
+        print(f"正在调用 LLM 生成补充响应...")
+        print(f"{'='*50}\n")
         
         # 使用角色LLM生成补充响应
         loop = asyncio.get_event_loop()
@@ -213,8 +263,14 @@ class ResponseFlow:
             )
         )
         
-        # 如果响应是"NONE"，表示不需要补充响应
-        if response.strip().upper() == "NONE":
+        print(f"\n{'='*50}")
+        print(f"补充响应生成完成")
+        print(f"响应长度: {len(response)} 字符")
+        print(f"{'='*50}\n")
+        
+        # 如果响应太短或为空，返回空字符串
+        if not response or len(response.strip()) < 50:
+            print("补充响应太短，跳过")
             return ""
         
         return response

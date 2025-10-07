@@ -92,6 +92,10 @@ function App() {
     setChatHistory([...chatHistory, { role: 'user', content: userMessage }]);
     setChatMessage('');
 
+    // 添加"思考中"的占位消息
+    const thinkingMessageIndex = chatHistory.length + 1;
+    setChatHistory(prev => [...prev, { role: 'thinking', content: '正在思考...' }]);
+
     try {
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
@@ -106,10 +110,36 @@ function App() {
       if (!response.ok) throw new Error('对话失败');
 
       const data = await response.json();
-      // 后端返回的字段是 message，不是 response
-      setChatHistory(prev => [...prev, { role: 'assistant', content: data.message }]);
+      
+      // 移除"思考中"消息，添加实际回复
+      setChatHistory(prev => {
+        const newHistory = prev.filter((_, index) => index !== thinkingMessageIndex);
+        return [...newHistory, { 
+          role: 'assistant', 
+          content: data.message,
+          type: data.type,
+          hasMemories: data.memories && data.memories.length > 0
+        }];
+      });
+
+      // 如果是immediate类型，显示"记忆检索中"提示
+      if (data.type === 'immediate') {
+        setChatHistory(prev => [...prev, { 
+          role: 'memory-searching', 
+          content: '🔍 正在检索相关记忆，准备补充回答...' 
+        }]);
+
+        // 模拟等待补充响应（实际应该通过WebSocket或轮询获取）
+        setTimeout(() => {
+          setChatHistory(prev => prev.filter(msg => msg.role !== 'memory-searching'));
+        }, 3000);
+      }
     } catch (error) {
-      setChatHistory(prev => [...prev, { role: 'error', content: `错误: ${error.message}` }]);
+      // 移除"思考中"消息，添加错误消息
+      setChatHistory(prev => {
+        const newHistory = prev.filter((_, index) => index !== thinkingMessageIndex);
+        return [...newHistory, { role: 'error', content: `错误: ${error.message}` }];
+      });
     }
   };
 
