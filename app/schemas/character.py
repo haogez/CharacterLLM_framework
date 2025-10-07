@@ -55,12 +55,12 @@ class CharacterGenerationRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     """对话请求模式"""
-    character_id: int = Field(..., description="角色ID")
+    character_id: str = Field(..., description="角色ID（UUID字符串）")
     message: str = Field(..., description="用户消息")
+    conversation_history: Optional[list] = Field(default=[], description="对话历史")
 
 class ChatResponse(BaseModel):
     """对话响应模式"""
-    character_id: int
-    response: str
-    response_type: str = Field(..., description="响应类型: immediate, supplemented")
-    timestamp: datetime
+    message: str = Field(..., description="角色回复")
+    type: str = Field(..., description="响应类型: immediate, supplementary")
+    memories: Optional[list] = Field(None, description="使用的记忆")
