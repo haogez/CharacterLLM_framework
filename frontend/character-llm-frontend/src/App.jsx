@@ -106,7 +106,8 @@ function App() {
       if (!response.ok) throw new Error('对话失败');
 
       const data = await response.json();
-      setChatHistory(prev => [...prev, { role: 'assistant', content: data.response }]);
+      // 后端返回的字段是 message，不是 response
+      setChatHistory(prev => [...prev, { role: 'assistant', content: data.message }]);
     } catch (error) {
       setChatHistory(prev => [...prev, { role: 'error', content: `错误: ${error.message}` }]);
     }
