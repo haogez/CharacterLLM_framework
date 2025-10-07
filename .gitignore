@@ -55,3 +55,10 @@ logs/
 .Trashes
 ehthumbs.db
 Thumbs.db
+# 忽略后端进程文件
+backend.pid
+
+# 忽略数据集目录（动态生成，不进Git）
+data/
+
+# （可选）如果还有其他临时文件，也可在此添加，比如日志文件 *.log

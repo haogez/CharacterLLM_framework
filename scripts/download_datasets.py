@@ -28,7 +28,7 @@ def download_personahub(output_dir: str, sample_size: int = 1000) -> None:
     os.makedirs(output_dir, exist_ok=True)
     
     # 下载数据集
-    dataset = load_dataset("proj-persona/PersonaHub", split="train")
+    dataset = load_dataset("proj-persona/PersonaHub",name="persona", split="train")
     
     # 获取样本
     if sample_size > 0 and sample_size < len(dataset):
