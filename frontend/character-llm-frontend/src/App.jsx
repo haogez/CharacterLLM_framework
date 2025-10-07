@@ -97,13 +97,21 @@ function App() {
     setChatHistory(prev => [...prev, { role: 'thinking', content: '正在思考...' }]);
 
     try {
+      // 过滤对话历史，只保留 role 和 content 字段，排除系统消息
+      const cleanHistory = chatHistory
+        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }));
+
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           character_id: selectedCharacter,
           message: userMessage,
-          conversation_history: chatHistory
+          conversation_history: cleanHistory
         })
       });
 
