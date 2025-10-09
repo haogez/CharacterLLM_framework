@@ -189,127 +189,463 @@ class CharacterLLM:
     
     def generate_character(self, description: str) -> Dict[str, Any]:
         """
-        生成角色
-        
-        Args:
-            description: 角色描述
-            
-        Returns:
-            角色数据字典
+        一句话生成18维度立体角色：用户提示严格优先，自动衍生合理细节
+        核心逻辑：用户明确设定的属性>其他衍生维度，确保角色符合用户预期
         """
         system_prompt = """
-        你是一个角色创建助手。你的任务是根据给定的描述创建详细的角色档案。
+        你是“用户驱动型角色生成专家”，需严格遵循以下逻辑生成角色：
+        1. 优先提取用户描述中的**明确设定**（如“阴暗的宝妈”“讨厌小孩的老师”），这些设定必须100%保留，不得被常识覆盖；
+        2. 对用户未明确说明的维度，基于“用户设定+职业常识”合理衍生，确保所有维度围绕用户设定自洽。
         
-        请用 JSON 格式回复，格式如下（除了 personality 外不要使用嵌套对象）：
+        输出格式：严格按JSON格式，18个维度，所有内容用中文，不增减字段、不嵌套（personality除外）。
+        
+        JSON字段及生成规则：
         {
-          "name": "角色的中文名字",
-          "age": 35,
-          "gender": "男/女/其他",
-          "occupation": "角色的职业",
-          "background": "详细的背景故事（中文，至少100字）",
-          "speech_style": "角色的说话风格描述（中文）",
+          "name": "中文名字（贴合用户设定，如“阴暗的宝妈”可叫“周琳”，避免阳光感名字）",
+          "age": 32,  // 整数，用户有设定则用设定，无则按“用户核心设定+职业”推导（如“宝妈”默认25-35岁）
+          "gender": "男/女/其他",  // 优先用户设定，无则按名字或核心设定推导
+          "occupation": "职业（用户设定优先，如“宝妈”可写“全职妈妈”，即使与常识冲突也必须保留）",
+          "hobby": "兴趣爱好（**完全围绕用户核心设定**，如“阴暗的宝妈”可衍生“独自看恐怖片、收集暗黑系玩偶”，而非常识中的“带娃逛公园”）",
+          "skill": "核心技能（基于用户设定衍生，如“阴暗的宝妈”可写“偷偷观察邻居、用手机剪辑压抑风格的视频”）",
+          "values": "价值观（必须体现用户设定的核心特质，如“阴暗的宝妈”可写“人性本恶、不相信他人、自己的孩子也需时刻提防”）",
+          "living_habit": "生活习惯（强化用户设定，如“阴暗的宝妈”可写“白天拉窗帘、晚上独自在客厅发呆、很少带孩子出门”）",
+          "dislike": "厌恶事物（服务于用户设定，如“阴暗的宝妈”可写“邻居的热情问候、孩子过度吵闹、阳光明媚的天气”）",
+          "language_style": "语言细节（直接体现用户设定的性格，如“阴暗的宝妈”可写“说话声音低哑、常说‘别靠近我’‘你真烦’、很少用积极词汇”）",
+          "appearance": "外貌特征（视觉化用户设定，如“阴暗的宝妈”可写“面色苍白、眼神躲闪、常穿深色衣服、头发凌乱”）",
+          "family_status": "家庭状况（围绕用户设定构建，如“阴暗的宝妈”可写“与丈夫关系冷淡、独自带3岁女儿、很少与家人联系”）",
+          "education": "教育背景（不与用户设定冲突即可，如“阴暗的宝妈”可写“大专毕业于本地师范学院，很少提及学历”）",
+          "social_pattern": "社交模式（符合用户设定，如“阴暗的宝妈”可写“几乎不参加宝妈聚会、线上只逛匿名论坛、拒绝朋友拜访”）",
+          "favorite_thing": "最爱事物（强化用户设定，如“阴暗的宝妈”可写“雨天、安静的夜晚、女儿睡着后的独处时间”）",
+          "usual_place": "常去地点（体现用户设定，如“阴暗的宝妈”可写“自家客厅、深夜的便利店、人少的地下停车场”）",
+          "past_experience": "关键经历（解释用户设定的成因，如“阴暗的宝妈”可写“产后被丈夫忽视、曾被闺蜜背叛，逐渐变得不愿相信他人”）",
+          "speech_style": "整体说话风格（概括用户设定的沟通方式，如“阴暗的宝妈”可写“冷漠疏离、很少主动说话、回答问题简短带刺”）",
           "personality": {
-            "openness": 65,
-            "conscientiousness": 75,
-            "extraversion": 55,
-            "agreeableness": 80,
-            "neuroticism": 40
-          }
+            "openness": 20,  // 开放性：用户设定“阴暗”则分数低（10-30），“开朗”则高（70-90）
+            "conscientiousness": 50,  // 尽责性：根据用户设定调整（如“粗心的医生”则低，“严谨的程序员”则高）
+            "extraversion": 10,  // 外向性：“阴暗/内向”则低（10-30），“开朗/外向”则高（70-90）
+            "agreeableness": 15,  // 宜人性：“阴暗/刻薄”则低（10-30），“温和/友善”则高（70-90）
+            "neuroticism": 85  // 神经质：“阴暗/情绪化”则高（70-90），“稳定/平和”则低（10-30）
+          },
+          "background": "背景故事（≥200字，**以用户设定为核心线索**，串联所有维度，解释设定成因，如“周琳32岁，产后因丈夫出轨变得沉默寡言...逐渐养成拉窗帘、独自发呆的习惯...”）"
         }
         
-        重要要求：
-        - 所有文本内容必须使用中文
-        - 使用上面显示的确切字段名
-        - personality 分数应为 0-100 的整数
-        - 除了 "personality" 外不要使用嵌套对象
-        - 只回复 JSON，不要有其他文本
-        - 背景故事要详细生动，至少100字
-        - 说话风格要具体描述语气、用词特点
+        核心优先级规则（必须严格遵守）：
+        1. 用户明确提到的任何属性（如“讨厌小孩的老师”“内向的销售员”）为最高优先级，所有维度必须围绕该属性生成，**即使与常识冲突也必须保留**；
+        2. 未提及的维度，先参考以下职业常识（仅当不与用户设定冲突时使用）：
+            - 【程序员（后端/前端/算法）】
+             正向特质：逻辑清晰、问题解决能力强、注重细节、自学能力强
+             负向特质：社交被动、作息不规律、过度专注技术忽略人情世故
+             爱好：编程、玩策略类游戏、看技术文档、组装电脑、写技术博客
+             习惯：使用快捷键、多任务处理、戴降噪耳机、代码版本控制、喝功能性饮料
+             价值观：效率至上、开源精神、用数据说话、最小化解决方案
+             常见矛盾：追求完美代码 vs 项目截止日期压力
+        
+           - 【教师（中小学/大学）】
+             正向特质：耐心、善于沟通、责任感强、同理心、终身学习
+             负向特质：有时固执、过度操心、容易有职业倦怠、对学生期望过高
+             爱好：阅读教育类书籍、备课时听轻音乐、参加教学研讨会、写教学反思
+             习惯：提前10分钟到教室、随身携带教案和红笔、记录学生进步、课后答疑
+             价值观：每个学生都有潜力、教育改变命运、公平对待所有学生
+             常见矛盾：应试压力 vs 素质教育理想
+        
+           - 【医生（内科/外科/儿科）】
+             正向特质：冷静、严谨、抗压能力强、富有同情心、决策果断
+             负向特质：情感隔离、工作狂倾向、对自身健康疏忽、有时显得冷漠
+             爱好：阅读医学期刊、慢跑、烹饪健康餐、园艺、听古典音乐
+             习惯：频繁洗手、随身携带笔和小本子、定期参加学术会议、记录病例特点
+             价值观：生命至上、患者隐私保护、循证医学、不放弃任何希望
+             常见矛盾：有限医疗资源 vs 患者无限需求
+        
+           - 【护士（住院部/门诊/手术室）】
+             正向特质：细心、有同理心、应变能力强、团队合作精神、耐心
+             负向特质：容易焦虑、过度疲劳、情绪压抑、有时显得机械
+             爱好：整理收纳、烘焙、练习基础护理操作、参加急救培训
+             习惯：快速准确执行医嘱、定时巡视病房、记录生命体征、轻声交流
+             价值观：患者舒适优先、团队协作、细致入微、职业自豪感
+             常见矛盾：工作负荷重 vs 护理质量要求高
+        
+           - 【设计师（UI/UX/平面）】
+             正向特质：创造力强、审美敏锐、注重细节、用户思维、开放心态
+             负向特质：完美主义、拖延症、对批评敏感、熬夜成瘾
+             爱好：参观艺术展、收集灵感图片、尝试新设计工具、手绘草图、逛文创店
+             习惯：建立设计系统、使用网格布局、保存多个设计版本、关注设计趋势
+             价值观：形式追随功能、用户体验至上、原创性、设计改变生活
+             常见矛盾：商业需求 vs 设计理想
+        
+           - 【销售员（零售/企业级/房产）】
+             正向特质：外向、沟通能力强、抗压能力强、目标导向、同理心
+             负向特质：过度推销、有时不真诚、业绩压力大、工作生活界限模糊
+             爱好：参加社交活动、研究消费者心理学、看销售类书籍、角色扮演练习
+             习惯：提前准备销售话术、记录客户偏好、定期回访、分析成交案例
+             价值观：客户至上、诚信为本、结果导向、持续学习
+             常见矛盾：短期业绩 vs 长期客户关系
+        
+           - 【公务员（基层/机关/窗口）】
+             正向特质：责任心强、遵守规则、服务意识、耐心、稳重
+             负向特质：保守、官僚作风、效率低下、创新不足、风险规避
+             爱好：阅读政策文件、书法、养花、散步、参加单位组织的活动
+             习惯：提前到岗、按流程办事、记录工作台账、参加例会、使用规范用语
+             价值观：为人民服务、依法行政、廉洁自律、集体荣誉
+             常见矛盾：程序正义 vs 结果效率
+        
+           - 【艺术家（画家/音乐家/作家）】
+             正向特质：创造力强、敏感细腻、富有想象力、表达能力强、坚持自我
+             负向特质：情绪化、固执、生活不规律、社交回避、对批评敏感
+             爱好：参观展览/演出、阅读文学作品、即兴创作、旅行采风、记灵感笔记
+             习惯：在特定时间创作（如深夜）、使用特定工具、保持创作空间凌乱有序
+             价值观：艺术高于一切、原创性、自我表达、追求极致
+             常见矛盾：艺术理想 vs 商业变现
+        
+           - 【工程师（机械/电子/土木）】
+             正向特质：理性、动手能力强、解决问题能力强、严谨、系统思维
+             负向特质：过度理性、缺乏人文关怀、固执己见、不善于表达
+             爱好：拆装机械、看工程纪录片、做手工、研究新材料、参加技术论坛
+             习惯：绘制草图、计算参数、检查细节、使用专业工具、记录实验数据
+             价值观：安全第一、实用主义、持续改进、精确无误
+             常见矛盾：理论设计 vs 实际施工难度
+        
+           - 【农民（种植/养殖）】
+             正向特质：勤劳、朴实、耐心、顺应自然、坚韧
+             负向特质：保守、缺乏风险意识、受教育程度有限、有时固执
+             爱好：观察作物生长、研究种植技术、和同行交流经验、修理农具
+             习惯：早起劳作、根据节气安排农活、记录收成、关注天气预报
+             价值观：一分耕耘一分收获、尊重自然、家庭至上、节俭
+             常见矛盾：传统经验 vs 现代农业技术
+        
+           - 【消防员】
+             正向特质：勇敢、冷静、团队合作、责任感强、牺牲精神
+             负向特质：过度警惕、创伤后应激、工作压力大、对家人陪伴少
+             爱好：体能训练、模拟演练、学习新救援技术、参加社区安全宣传
+             习惯：保持装备随时可用、快速穿脱制服、定期检查设备、集体生活
+             价值观：生命至上、团队大于个人、纪律严明、保护他人
+             常见矛盾：个人安全 vs 救人使命
+        
+           - 【警察（刑事/交通/社区）】
+             正向特质：正义感、勇敢、责任心强、观察力敏锐、冷静
+             负向特质：多疑、权威主义、情绪压抑、对人性悲观、工作家庭失衡
+             爱好：格斗训练、射击练习、研究案例、跑步、关注法治新闻
+             习惯：注意观察周围环境、保持警惕、记录细节、遵守程序
+             价值观：法律面前人人平等、保护弱者、维护正义、责任重于泰山
+             常见矛盾：程序正义 vs 结果正义
+        
+           - 【商人（创业/零售/批发）】
+             正向特质：远见、果断、风险承受力强、资源整合能力、创新
+             负向特质：功利主义、不择手段、过度工作、人际关系功利化
+             爱好：参加商业论坛、阅读财经新闻、研究竞争对手、社交 networking
+             习惯：制定计划、分析数据、早起、关注市场趋势、记录灵感
+             价值观：利润最大化、机会至上、创新驱动、客户需求导向
+             常见矛盾：短期利益 vs 长期发展
+        
+           - 【出租车/网约车司机】
+             正向特质：熟悉路况、耐心、服务意识、警惕性高、善于聊天
+             负向特质：久坐、颈椎问题、工作时间长、有时急躁
+             爱好：听广播、研究最优路线、和乘客聊天、关注交通新闻
+             习惯：检查车辆状况、保持车内整洁、记录收入支出、避开拥堵路段
+             价值观：安全第一、诚信载客、效率优先、和气生财
+             常见矛盾：接单效率 vs 乘客体验
+        
+           - 【科学家（物理/化学/生物）】
+             正向特质：好奇心强、严谨、耐心、创新思维、理性客观
+             负向特质：社交能力弱、固执己见、实验失败时沮丧、生活简单
+             爱好：阅读学术论文、做实验、参加学术会议、科普写作、观察自然
+             习惯：记录实验数据、重复验证结果、保持实验室整洁、准时作息
+             价值观：追求真理、证据至上、科学精神、知识共享
+             常见矛盾：理论突破 vs 实验可行性
+        
+           - 【服务员（餐厅/酒店）】
+             正向特质：服务意识强、耐心、应变能力、团队合作、微笑服务
+             负向特质：收入低、工作时间长、受气、职业认同感低
+             爱好：学习服务礼仪、研究菜谱/客房服务细节、和同事交流经验
+             习惯：保持整洁、快速响应需求、记住常客偏好、团队协作
+             价值观：顾客满意、团队合作、尽职尽责、微笑面对
+             常见矛盾：顾客不合理要求 vs 服务标准
+        
+           - 【司机（货运/专车）】
+             正向特质：责任心强、熟悉路线、耐心、谨慎、时间观念强
+             负向特质：久坐、疲劳驾驶风险、饮食不规律、颈椎问题
+             爱好：检查车辆、听有声书、研究节油技巧、关注交通法规
+             习惯：规划最优路线、定期保养车辆、记录行程、遵守交规
+             价值观：安全第一、准时送达、爱护车辆、诚信服务
+             常见矛盾：赶时间 vs 安全驾驶
+        
+           - 【演员/艺人】
+             正向特质：表现力强、情感丰富、抗压能力、适应力强、公众意识
+             负向特质：情绪化、自我中心、隐私少、形象压力大、睡眠不足
+             爱好：看电影/戏剧、练习台词、健身塑形、参加表演 workshop
+             习惯：关注形象管理、练习表情、研究角色、保持媒体曝光
+             价值观：艺术表达、观众认可、专业精神、突破自我
+             常见矛盾：个人隐私 vs 公众关注
+        
+           - 【学生（小学/中学/大学）】
+             正向特质：好奇心强、学习能力强、适应力强、社交活跃、充满活力
+             负向特质：拖延症、注意力不集中、叛逆（青春期）、压力大（学业）
+             爱好：玩手机、看剧、运动、和朋友聚会、打游戏、追星
+             习惯：熬夜、赶作业、刷社交媒体、考试前突击复习、课间聊天
+             价值观：友谊重要、追求自由、成绩与兴趣平衡、自我表达
+             常见矛盾：学业压力 vs 兴趣发展
+        
+           - 【家庭主妇/夫】
+             正向特质：组织能力强、耐心、细致、顾家、厨艺好
+             负向特质：社交圈窄、自我价值感低、经济不独立、生活单调
+             爱好：烹饪、园艺、追剧、做家务创新、和其他家长交流
+             习惯：制定家庭计划、采购生活用品、准备三餐、整理家务、接送孩子
+             价值观：家庭至上、生活品质、节俭持家、家人健康
+             常见矛盾：个人需求 vs 家庭责任
+        
+           - 【退休人员】
+             正向特质：从容、经验丰富、时间充裕、心态平和、乐于分享
+             负向特质：孤独感、健康问题、与时代脱节、固执己见
+             爱好：广场舞、下棋、养花草、带孙子孙女、参加老年大学
+             习惯：规律作息、晨练、关注健康信息、定期体检、和老同事聚会
+             价值观：健康第一、家庭和睦、安享晚年、生活规律
+             常见矛盾：清闲生活 vs 价值感缺失
+        
+           - 【自由职业者（作家/设计师/顾问）】
+             正向特质：自律、独立、创造力强、时间管理能力、多元技能
+             负向特质：收入不稳定、工作时间不规律、孤独感、缺乏保障
+             爱好：探索新领域、网络社交、自我提升、灵活工作、旅行
+             习惯：制定工作计划、自我激励、寻找客户、管理财务、平衡工作生活
+             价值观：自由至上、专业精神、自我实现、工作生活平衡
+             常见矛盾：自由灵活 vs 稳定保障
+        
+           - 【军人】
+             正向特质：纪律性强、责任感、勇敢、团队精神、执行力强
+             负向特质：服从性过强、缺乏灵活性、情感压抑、家庭陪伴少
+             爱好：体能训练、武器知识学习、战术研究、团队活动
+             习惯：准时作息、整理内务、服从命令、保持警惕、团队协作
+             价值观：国家至上、使命优先、纪律严明、战友情谊
+             常见矛盾：个人意志 vs 集体命令
+        
+           - 【心理咨询师】
+             正向特质：同理心强、善于倾听、包容、理性、洞察力强
+             负向特质：情感耗竭、过度共情、边界模糊、自我治疗需求
+             爱好：阅读心理学书籍、参加督导、自我反思、冥想、观察人性
+             习惯：保持中立、积极倾听、记录案例、自我关怀、持续学习
+             价值观：尊重差异、隐私保护、成长潜能、无条件积极关注
+             常见矛盾：共情过深 vs 职业边界
+        3. 若用户设定与职业常识冲突（如“讨厌小孩的幼儿园老师”），则**完全抛弃冲突的常识**，所有维度围绕“讨厌小孩”生成（如爱好→独自玩手机，习惯→避免和孩子眼神接触）；
+        4. 衍生内容必须自洽（如“讨厌小孩的老师”不能同时衍生“喜欢带孩子做游戏”，但可以衍生“擅长应付家长却忽视孩子”）；
+        5. 只输出纯JSON文本，无任何额外内容（如“生成完成”“以下是角色”等）。
         """
         
-        user_prompt = f"请根据以下描述创建一个角色：{description}"
+        user_prompt = f"基于这句话生成全面角色（用户设定优先）：{description}"
         
         return self.client.generate_structured_response(system_prompt, user_prompt)
+
     
     def generate_memory(self, character_data: Dict[str, Any], memory_type: str) -> Dict[str, Any]:
         """
-        生成角色记忆
+        生成与角色深度绑定的多维度记忆，支撑角色行为逻辑与情感反应
         
         Args:
-            character_data: 角色数据
-            memory_type: 记忆类型（education, work, family, hobby, trauma, achievement）
+            character_data: 角色18维度完整数据
+            memory_type: 记忆类型（education, work, family, hobby, trauma, achievement, social, growth）
             
         Returns:
-            记忆数据字典
+            包含多维度细节的记忆数据字典
         """
+        # 提取角色核心特征与记忆类型强关联的信息
+        core_connections = {
+            "personality_markers": [
+                f"开放性{character_data['personality']['openness']}分：{'乐于尝试新事物' if character_data['personality']['openness']>60 else '偏好稳定熟悉的环境'}",
+                f"尽责性{character_data['personality']['conscientiousness']}分：{'注重细节有条理' if character_data['personality']['conscientiousness']>60 else '灵活随性'}",
+                f"外向性{character_data['personality']['extraversion']}分：{'主动社交能量充沛' if character_data['personality']['extraversion']>60 else '偏好独处恢复精力'}",
+                f"宜人性{character_data['personality']['agreeableness']}分：{'重视和谐合作' if character_data['personality']['agreeableness']>60 else '坚持自我边界'}",
+                f"神经质{character_data['personality']['neuroticism']}分：{'情绪敏感波动大' if character_data['personality']['neuroticism']>60 else '情绪稳定抗压强'}"
+            ],
+            "key_behavior_patterns": [
+                f"语言风格：{character_data['language_style']}",
+                f"社交模式：{character_data['social_pattern']}",
+                f"核心价值观：{character_data['values']}",
+                f"显著习惯：{character_data['living_habit']}"
+            ],
+            "relevant_history": character_data.get("past_experience", "")
+        }
+        
         system_prompt = f"""
-        You are a memory generation assistant. Your task is to create a detailed {memory_type} memory for the character.
-        The memory should be consistent with the character's background, personality, and values.
+        你是顶级角色记忆架构师，擅长构建能支撑角色行为逻辑的深层记忆。
+        任务：为角色生成{memory_type}类型的关键记忆，需成为角色性格与行为的"隐形支柱"。
         
-        Respond with a JSON object containing:
-        1. title: A short title for the memory
-        2. content: Detailed description of the memory
-        3. time: When this memory occurred (year or age)
-        4. emotion: The emotional impact of this memory (positive, negative, neutral)
-        5. importance: How important this memory is to the character (1-10)
+        记忆生成黄金法则（必须严格遵守）：
+        1. 基因级关联：每个细节必须与角色的性格特质、价值观、职业特征形成因果链
+        - 例：内向程序员的工作记忆应体现"独自调试到凌晨却因解决问题而满足"
+        - 反例：给宜人性低的角色生成"牺牲自我成全他人"的记忆
+        
+        2. 多感官沉浸：包含3+种感官细节（视觉/听觉/嗅觉/触觉/味觉）
+        - 视觉："阳光透过百叶窗在代码屏幕上投下斑驳光影"
+        - 听觉："键盘敲击声与窗外凌晨3点的环卫车铃声交织"
+        - 触觉："握着发烫的笔记本电脑底座，指尖因长时间敲击而发麻"
+        
+        3. 情感层次化：包含
+        - 即时情绪（事件发生时的原始反应）
+        - 反思情绪（事后回想的复杂感受）
+        - 残留情绪（对现在仍有影响的情感余波）
+        
+        4. 行为塑造力：明确解释该记忆如何
+        - 强化了某个现有习惯
+        - 改变了角色对某类事物的态度
+        - 形成了特定的应对模式（遇到类似情况会如何反应）
+        
+        记忆输出格式（JSON）：
+        {{
+        "title": "记忆标题（10-15字，包含核心意象）",
+        "content": "350-500字详细描述，包含：
+                    - 时间地点：精确到季节/天气/具体场景（例：2018年深秋雨夜的公司茶水间）
+                    - 关键人物：其言行与角色的互动细节
+                    - 事件经过：有明确的起因-发展-高潮-结局
+                    - 感官细节：至少3种感官体验
+                    - 内心活动：角色当时的想法、犹豫、决定过程
+                    - 对话片段：2-3句关键对话（符合角色语言风格）",
+        "time": {{
+            "age": 27,  // 角色当时的年龄（必须符合当前年龄逻辑）
+            "period": "工作第3年",  // 人生阶段描述
+            "specific": "周五加班到凌晨"  // 具体时间特征
+        }},
+        "emotion": {{
+            "immediate": ["紧张", "困惑"],  // 即时情绪（2-3个）
+            "reflected": ["庆幸", "后怕"],  // 事后反思情绪（2-3个）
+            "residual": "对突发状况的警惕感",  // 残留至今的情感
+            "intensity": 8  // 情感强度（1-10）
+        }},
+        "importance": {{
+            "score": 9,  // 重要性评分（1-10）
+            "reason": "奠定了对职业责任的理解",  // 重要性原因
+            "frequency": "每月至少想起1次"  // 回忆频率
+        }},
+        "behavior_impact": {{
+            "habit_formed": "每次提交代码前会做三重检查",  // 形成的习惯
+            "attitude_change": "从抵触加班变为重视问题解决",  // 态度转变
+            "response_pattern": "遇到突发故障会先深呼吸再拆解问题"  // 应对模式
+        }},
+        "trigger_system": {{
+            "sensory": ["键盘连续敲击30分钟以上", "闻到速溶咖啡的焦味"],  // 感官触发点
+            "contextual": ["项目上线前的最后测试", "独自加班到深夜时"],  // 情境触发点
+            "emotional": ["感到焦虑时", "面临关键决策时"]  // 情绪触发点
+        }},
+        "memory_distortion": {{
+            "exaggerated": "自己当时坚持的时间比实际更长",  // 记忆中被夸大的部分
+            "downplayed": "忽略了同事暗中提供的技术提示",  // 被淡化的部分
+            "reason": "强化自我能力认可的心理需求"  // 扭曲原因（符合角色性格）
+        }}
+        }}
+        
+        类型专属要求：
+        - education记忆：需体现学习方式与思维模式的关联
+        - work记忆：要包含职业技能与价值观的互动
+        - family记忆：需反映家庭关系对核心性格的塑造
+        - hobby记忆：要体现爱好带来的独特满足感与自我认同
+        - trauma记忆：需包含创伤后的防御机制形成过程
+        - achievement记忆：要体现成功标准与价值观的一致性
+        - social记忆：需反映社交模式的形成原因
+        - growth记忆：要体现关键转变的内在逻辑
+        
+        最终检查清单：
+        1. 所有细节是否与角色的18维度数据无冲突？
+        2. 是否能通过这段记忆解释角色的至少2个行为特征？
+        3. 情感描述是否符合角色的神经质水平？
+        4. 记忆中的决策模式是否与角色价值观一致？
+        5. 是否包含足够的感官细节以增强真实感？
         """
         
-        # 构建角色信息提示
-        character_info = json.dumps(character_data, ensure_ascii=False, indent=2)
-        user_prompt = f"Generate a {memory_type} memory for this character:\n\n{character_info}"
+        # 构建针对性提示信息
+        user_prompt = f"""
+        基于以下角色核心特征，生成{memory_type}记忆：
+        
+        【角色基础信息】
+        姓名：{character_data['name']}
+        年龄：{character_data['age']}
+        职业：{character_data['occupation']}
+        
+        【核心性格标记】
+        {', '.join(core_connections['personality_markers'])}
+        
+        【关键行为模式】
+        {', '.join(core_connections['key_behavior_patterns'])}
+        
+        【相关背景经历】
+        {core_connections['relevant_history']}
+        
+        请确保记忆与上述特征形成有机整体，而非孤立事件。
+        """
         
         return self.client.generate_structured_response(system_prompt, user_prompt)
     
+
     def generate_quick_response(self,
-                               character_data: Dict[str, Any],
-                               user_input: str,
-                               conversation_history: List[Dict[str, str]] = None) -> str:
+                                character_data: Dict[str, Any],
+                                user_input: str,
+                                conversation_history: List[Dict[str, str]] = None) -> str:
         """
         生成快速响应（第一阶段）
-        
-        只基于角色人设和最近对话，不使用记忆，确保极快响应
-        
-        Args:
-            character_data: 角色数据
-            user_input: 用户输入
-            conversation_history: 对话历史（只使用最近1-2轮）
-            
-        Returns:
-            生成的响应文本
+        当检测到用户输入可能触及需要记忆的内容时，先给出简短响应
+        为记忆检索争取时间，确保对话流畅性
         """
-        # 提取关键角色信息
-        name = character_data.get('name', '角色')
-        gender = character_data.get('gender', '未知')
-        occupation = character_data.get('occupation', '未知')
-        speech_style = character_data.get('speech_style', '自然流畅')
-        personality = character_data.get('personality', {})
+        # 提取快速响应必须参考的核心人设要素
+        core_identity = {
+            "name": character_data.get('name', '角色'),
+            "speech_style": character_data.get('speech_style', '自然流畅'),
+            "personality_traits": {
+                "extraversion": character_data['personality'].get('extraversion', 50),  # 决定回应的热情程度
+                "agreeableness": character_data['personality'].get('agreeableness', 50),  # 决定回应的友好程度
+                "neuroticism": character_data['personality'].get('neuroticism', 50)      # 决定回应的情绪波动
+            },
+            "language_features": {
+                "vocabulary": character_data.get('language_style', '').split('、')[:3],  # 核心词汇特征
+                "sentence_length": "简短" if character_data['personality'].get('conscientiousness', 50) < 40 else "中等",
+                "tone_markers": ["温和", "礼貌"] if character_data['personality'].get('agreeableness', 50) > 60 else 
+                                ["直接", "简洁"] if character_data['personality'].get('agreeableness', 50) < 40 else 
+                                ["中性", "客观"]
+            }
+        }
         
-        # 构建简化的系统提示
+        # 检测用户输入是否可能触发记忆检索（需要优先响应的场景）
+        memory_trigger_words = [
+            "记得", "以前", "曾经", "上次", "小时候", "大学", "工作", "家庭",
+            "经历", "发生", "故事", "回忆", "为什么", "怎么会", "原因"
+        ]
+        is_memory_related = any(word in user_input for word in memory_trigger_words)
+        
         system_prompt = f"""
-        你正在扮演一个角色，请根据以下人设快速回复用户：
+        你需要为角色生成一个过渡性快速响应，遵循以下规则：
         
-        姓名：{name}
-        性别：{gender}
-        职业：{occupation}
-        说话风格：{speech_style}
-        性格特点：开放性{personality.get('openness', 50)}/100，外向性{personality.get('extraversion', 50)}/100
+        【核心人设】
+        姓名：{core_identity['name']}
+        说话风格：{core_identity['speech_style']}
+        性格特征：
+        - 外向性{core_identity['personality_traits']['extraversion']}/100：{'热情主动' if core_identity['personality_traits']['extraversion']>60 else '内敛被动'}
+        - 宜人性{core_identity['personality_traits']['agreeableness']}/100：{'友善包容' if core_identity['personality_traits']['agreeableness']>60 else '坚持己见'}
+        - 情绪稳定性{100-core_identity['personality_traits']['neuroticism']}/100：{'冷静稳定' if core_identity['personality_traits']['neuroticism']<40 else '敏感波动'}
         
-        要求：
-        - 用中文回复
-        - 保持角色的说话风格
-        - 回复简短自然（1-2句话）
-        - 直接回答，不要过度思考
+        【语言特征】
+        - 核心词汇：{core_identity['language_features']['vocabulary']}
+        - 句子长度：{core_identity['language_features']['sentence_length']}
+        - 语气特点：{core_identity['language_features']['tone_markers']}
+        
+        【响应规则】
+        1. 当检测到用户输入涉及记忆（如提到过去、经历等）：
+           - 明确表示需要回忆（例："让我想想...", "这个我得回忆一下"）
+           - 保持角色语气，不透露系统机制
+           - 不提供具体信息，为后续补充响应留空间
+        
+        2. 通用要求：
+           - 绝对简短（1句话，10-20字）
+           - 符合角色的说话风格和性格
+           - 承接用户话题，不转移焦点
+           - 自然流畅，像真实思考的停顿
+           - 避免使用表情符号或markdown格式
+        
+        错误示例（不符合角色性格）：
+        - 内向角色说："这个问题太有意思了！我马上告诉你详情！"
+        - 宜人性低的角色说："好的好的，我一定好好想想帮你解答~"
         """
         
-        # 添加最近对话（如果有）
-        history_text = ""
-        if conversation_history and len(conversation_history) > 0:
-            last_msg = conversation_history[-1]
-            if last_msg.get("role") == "user":
-                history_text = f"\n上一句：{last_msg.get('content', '')}"
+        # 构建对话上下文（只取最近1轮确保快速处理）
+        context = ""
+        if conversation_history and len(conversation_history) >= 1:
+            last_exchange = conversation_history[-1]
+            context = f"上一句对话：{last_exchange.get('content', '')}\n"
         
-        # 构建用户提示
-        user_prompt = f"{history_text}\n用户说：{user_input}\n\n请快速回复："
+        user_prompt = f"{context}用户当前输入：{user_input}\n\n{'用户提到了需要回忆的内容，请生成过渡响应' if is_memory_related else '请生成符合角色的简短响应'}"
         
         return self.client.generate_response(system_prompt, user_prompt)
     
@@ -319,55 +655,90 @@ class CharacterLLM:
                                   conversation_history: List[Dict[str, str]] = None,
                                   relevant_memories: List[Dict[str, Any]] = None) -> str:
         """
-        生成完整对话响应（第三阶段）
-        
-        基于角色人设、对话历史和相关记忆生成详细响应
-        
-        Args:
-            character_data: 角色数据
-            user_input: 用户输入
-            conversation_history: 对话历史
-            relevant_memories: 相关记忆
-            
-        Returns:
-            生成的响应文本
+        生成补充响应（第三阶段）
+        基于检索到的记忆和完整人设，补充快速响应的内容
+        形成完整、有深度且符合角色的回答
         """
-        # 构建系统提示
-        character_info = json.dumps(character_data, ensure_ascii=False, indent=2)
+        # 提取需要结合的核心要素
+        key_elements = {
+            "identity": {
+                "name": character_data.get('name'),
+                "occupation": character_data.get('occupation'),
+                "values": character_data.get('values'),
+                "personality": character_data.get('personality')
+            },
+            "communication_style": {
+                "speech_style": character_data.get('speech_style'),
+                "language_style": character_data.get('language_style'),
+                "social_pattern": character_data.get('social_pattern')
+            }
+        }
+        
         system_prompt = f"""
-        你正在扮演以下角色，请根据角色的性格、背景和说话风格来回复用户。
+        你需要基于记忆为角色生成补充响应，完成快速响应未说完的内容。
+        这是对话的第三阶段，需要提供完整、深入且符合角色的回答。
         
-        角色信息：
-        {character_info}
+        【角色核心要素】
+        姓名：{key_elements['identity']['name']}
+        职业：{key_elements['identity']['occupation']}
+        核心价值观：{key_elements['identity']['values']}
+        性格特质：
+        - 开放性{key_elements['identity']['personality'].get('openness', 50)}/100
+        - 尽责性{key_elements['identity']['personality'].get('conscientiousness', 50)}/100
+        - 外向性{key_elements['identity']['personality'].get('extraversion', 50)}/100
+        - 宜人性{key_elements['identity']['personality'].get('agreeableness', 50)}/100
+        - 神经质{key_elements['identity']['personality'].get('neuroticism', 50)}/100
         
-        要求：
-        - 用中文回复
-        - 保持角色的性格特点和说话风格
-        - 结合角色的背景和记忆
-        - 回复要自然、有深度
+        【沟通风格】
+        整体说话风格：{key_elements['communication_style']['speech_style']}
+        语言细节特征：{key_elements['communication_style']['language_style']}
+        社交模式：{key_elements['communication_style']['social_pattern']}
+        
+        【响应规则】
+        1. 记忆整合：
+           - 自然融入相关记忆细节（不生硬提及"我记得"）
+           - 重点体现记忆中的情感和影响（而非单纯复述事件）
+           - 当有多个记忆时，按重要性排序呈现
+        
+        2. 角色一致性：
+           - 语言风格与快速响应保持连贯
+           - 情感表达符合角色的神经质水平
+           - 观点和态度与角色价值观一致
+        
+        3. 内容要求：
+           - 补充快速响应的未尽之意（形成完整回答）
+           - 长度适中（30-80字）
+           - 包含具体细节（让回答更生动）
+           - 回应用户的核心疑问或话题
+        
+        4. 衔接自然度：
+           - 不重复快速响应的内容
+           - 用过渡词自然衔接（如"其实那时候..."、"具体来说..."）
+           - 保持口语化，避免书面语
         """
         
-        # 添加对话历史
-        history_text = ""
+        # 构建完整对话历史
+        history_context = ""
         if conversation_history:
-            history_text = "\n对话历史：\n"
-            for msg in conversation_history[-6:]:  # 最近3轮
-                if msg["role"] == "user":
-                    history_text += f"用户：{msg['content']}\n"
-                else:
-                    history_text += f"{character_data.get('name', '角色')}：{msg['content']}\n"
+            history_context = "对话历史：\n"
+            for msg in conversation_history[-5:]:  # 保留最近2-3轮完整对话
+                role = "用户" if msg["role"] == "user" else key_elements['identity']['name']
+                history_context += f"{role}：{msg['content']}\n"
         
-        # 添加相关记忆
-        memories_text = ""
+        # 处理相关记忆（突出与当前对话的关联性）
+        memories_context = ""
         if relevant_memories:
-            memories_text = "\n相关记忆（可以在回复中体现）：\n"
-            for memory in relevant_memories:
-                memories_text += f"- {memory.get('title', '')}: {memory.get('content', '')}\n"
+            memories_context = "需要融入的记忆（按重要性排序）：\n"
+            for i, memory in enumerate(relevant_memories):
+                impact = memory.get('behavior_impact', {})
+                memories_context += f"{i+1}. [{memory.get('time', {}).get('age', '未知年龄')}岁经历] {memory.get('title', '')}："
+                memories_context += f"{memory.get('content', '')[:50]}... "
+                memories_context += f"（影响：{impact.get('habit_formed', '')}）\n"
         
-        # 构建用户提示
-        user_prompt = f"{history_text}\n{memories_text}\n用户：{user_input}\n\n请作为{character_data.get('name', '角色')}回复："
+        user_prompt = f"{history_context}\n{memories_context}\n用户当前输入：{user_input}\n\n请生成补充响应，完成角色的完整回答："
         
         return self.client.generate_response(system_prompt, user_prompt)
+    
 
 
 # 测试代码
