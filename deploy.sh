@@ -99,6 +99,16 @@ else
     echo "ℹ️  前端无更新，跳过构建"
 fi
 
+# 更新 Nginx 配置（无论前端是否更新都要检查）
+echo "📋 更新 Nginx 配置..."
+cd /CharacterLLM_framework
+if [ -f nginx.conf ]; then
+    cp nginx.conf /etc/nginx/conf.d/default.conf
+    echo "✅ Nginx 配置已更新"
+else
+    echo "⚠️  警告：nginx.conf 文件不存在"
+fi
+
 echo ""
 
 # ========== 第五步：启动后端服务 ==========
