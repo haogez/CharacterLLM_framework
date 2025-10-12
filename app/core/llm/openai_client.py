@@ -109,7 +109,7 @@ class OpenAIClient:
         
         # 调试日志
         print(f"=== LLM 原始响应 ===")
-        print(response_text[:500] if len(response_text) > 500 else response_text)
+        print(response_text[:1500] if len(response_text) > 1500 else response_text)
         print(f"=== 响应长度: {len(response_text)} ===")
         
         try:
@@ -202,7 +202,7 @@ class CharacterLLM:
         JSON字段及生成规则：
         {
           "name": "中文名字（贴合用户设定，如“阴暗的宝妈”可叫“周琳”，避免阳光感名字）",
-          "age": 32,  // 整数，用户有设定则用设定，无则按“用户核心设定+职业”推导（如“宝妈”默认25-35岁）
+          "age": 32,  // 必须是整数（阿拉伯数字，如32），绝对禁止英文单词（如thirty-two），用户有设定则用设定，无则按“用户核心设定+职业”推导
           "gender": "男/女/其他",  // 优先用户设定，无则按名字或核心设定推导
           "occupation": "职业（用户设定优先，如“宝妈”可写“全职妈妈”，即使与常识冲突也必须保留）",
           "hobby": "兴趣爱好（**完全围绕用户核心设定**，如“阴暗的宝妈”可衍生“独自看恐怖片、收集暗黑系玩偶”，而非常识中的“带娃逛公园”）",
