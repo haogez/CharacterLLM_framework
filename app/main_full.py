@@ -52,6 +52,19 @@ class CharacterResponse(BaseModel):
     personality: Dict[str, int]
     background: str
     speech_style: str
+    hobby: str  # 兴趣爱好
+    skill: str  # 核心技能
+    values: str  # 价值观
+    living_habit: str  # 生活习惯
+    dislike: str  # 厌恶事物
+    language_style: str  # 语言细节
+    appearance: str  # 外貌特征
+    family_status: str  # 家庭状况
+    education: str  # 教育背景
+    social_pattern: str  # 社交模式
+    favorite_thing: str  # 最爱事物
+    usual_place: str  # 常去地点
+    past_experience: str  # 关键经历
 
 class MemoryResponse(BaseModel):
     id: str
