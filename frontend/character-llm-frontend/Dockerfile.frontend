@@ -3,10 +3,11 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
-COPY package*.json ./
+# 复制前端项目文件
+COPY frontend/character-llm-frontend/package*.json ./
 RUN npm install
 
-COPY . .
+COPY frontend/character-llm-frontend/ .
 RUN npm run build
 
 # 生产阶段
@@ -15,8 +16,8 @@ FROM nginx:alpine
 # 复制构建产物到Nginx服务目录
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# 复制Nginx配置
-COPY ../../nginx.conf /etc/nginx/conf.d/default.conf
+# 复制Nginx配置（现在从项目根目录可以直接访问）
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

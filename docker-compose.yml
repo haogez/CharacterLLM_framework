@@ -17,8 +17,8 @@ services:
 
   frontend:
     build:
-      context: ./frontend/character-llm-frontend
-      dockerfile: Dockerfile.frontend
+      context: .
+      dockerfile: ./frontend/character-llm-frontend/Dockerfile.frontend
     ports:
       - "5173:80"
     depends_on:
