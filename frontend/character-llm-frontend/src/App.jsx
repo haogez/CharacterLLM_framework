@@ -36,19 +36,19 @@ function App() {
     setLoading(true);
     setMessage({ type: '', text: '' });
 
-    // 1. 创建超时控制器（30秒超时）
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒后取消请求
+    // // 1. 创建超时控制器（30秒超时）
+    // const controller = new AbortController();
+    // const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒后取消请求
 
     try {
       const response = await fetch(`${API_BASE_URL}/characters/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description }),
-        signal: controller.signal, // 关联超时控制器
+        // signal: controller.signal, // 关联超时控制器
       });
 
-      clearTimeout(timeoutId); // 清除超时定时器（如果请求提前完成）
+      // clearTimeout(timeoutId); // 清除超时定时器（如果请求提前完成）
 
       if (!response.ok) throw new Error(`HTTP错误：${response.status}`);
 
@@ -57,6 +57,7 @@ function App() {
       setDescription('');
       loadCharacters();
     } catch (error) {
+      console.error("角色生成失败原因：", error); // 新增：打印错误详情
       // 区分“超时错误”和“其他错误”
       if (error.name === 'AbortError') {
         setMessage({ type: 'error', text: '角色生成超时，请稍后重试' });

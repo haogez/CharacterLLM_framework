@@ -5,6 +5,8 @@
 """
 
 import os
+import time
+import uuid
 from typing import Dict, List, Any, Optional
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
@@ -111,36 +113,33 @@ async def system_status():
 
 @app.post("/api/v1/characters/generate", response_model=CharacterResponse)
 async def generate_character(request: CharacterGenerationRequest, background_tasks: BackgroundTasks):
+    start_time = time.time()  # 记录角色生成开始时间
     try:
-        # 生成角色
+        # 生成角色数据
         character_data = character_generator.generate_character(request.description)
         
-        # 检查是否生成成功
+        # 检查生成结果
         if "error" in character_data:
             raise ValueError(f"LLM返回错误: {character_data.get('error')}")
         
-        # 生成角色ID
-        import uuid
+        # 生成角色ID并存储
         character_id = str(uuid.uuid4())
-        
-        # 存储角色数据
         characters[character_id] = character_data
         
-        # 在后台生成记忆（如果失败不影响角色创建）
-        try:
-            background_tasks.add_task(
-                generate_and_store_memories,
-                character_id,
-                character_data
-            )
-        except Exception as memory_error:
-            print(f"警告：添加记忆生成任务失败: {memory_error}")
+        # 计算角色生成耗时
+        role_gen_time = time.time() - start_time
+        print(f"=== 角色 [{character_id}] 生成耗时: {role_gen_time:.2f} 秒 ===")
+        
+        # 后台生成记忆（传递角色生成开始时间，用于计算总耗时）
+        background_tasks.add_task(
+            generate_and_store_memories,
+            character_id,
+            character_data,
+            start_time
+        )
         
         # 返回角色数据
-        return {
-            "id": character_id,
-            **character_data
-        }
+        return {"id": character_id, **character_data}
     except Exception as e:
         import traceback
         error_detail = f"角色生成失败: {str(e)}\n{traceback.format_exc()}"
@@ -237,7 +236,7 @@ async def get_chat_history(character_id: str):
     return []
 
 # 后台任务
-async def generate_and_store_memories(character_id: str, character_data: Dict[str, Any]):
+async def generate_and_store_memories(character_id: str, character_data: Dict[str, Any], role_start_time: float):
     """
     生成并存储角色记忆
     
@@ -245,12 +244,19 @@ async def generate_and_store_memories(character_id: str, character_data: Dict[st
         character_id: 角色ID
         character_data: 角色数据
     """
+    memory_start = time.time()
     try:
+        print(f"=== 开始生成角色 [{character_id}] 的记忆 ===")
         # 生成记忆
-        memories = character_generator.generate_memories(character_data, count=10)
+        memories = character_generator.generate_memories(character_data, count=5)
         
         # 存储记忆
         memory_store.add_memories(character_id, memories)
+        # 计算耗时
+        memory_gen_time = time.time() - memory_start
+        total_time = time.time() - role_start_time
+        print(f"=== 角色 [{character_id}] 记忆生成耗时: {memory_gen_time:.2f} 秒 ===")
+        print(f"=== 从角色生成到记忆存储完成，总耗时: {total_time:.2f} 秒 ===")
     except Exception as e:
         print(f"记忆生成失败: {str(e)}")
 

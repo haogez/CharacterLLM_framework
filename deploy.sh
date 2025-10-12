@@ -11,26 +11,26 @@ echo "CharacterLLM Framework - 部署脚本"
 echo "=========================================="
 echo ""
 
-# ========== 第一步：拉取最新代码 ==========
-echo "📥 [1/6] 拉取最新代码..."
-cd /CharacterLLM_framework
+# # ========== 第一步：拉取最新代码 ==========
+# echo "📥 [1/6] 拉取最新代码..."
+# cd /CharacterLLM_framework
 
-# 检查是否有未提交的修改
-if [[ -n $(git status -s) ]]; then
-    echo "⚠️  警告：有未提交的修改"
-    git status -s
-    read -p "是否继续？(y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "❌ 部署已取消"
-        exit 1
-    fi
-fi
+# # 检查是否有未提交的修改
+# if [[ -n $(git status -s) ]]; then
+#     echo "⚠️  警告：有未提交的修改"
+#     git status -s
+#     read -p "是否继续？(y/n) " -n 1 -r
+#     echo
+#     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+#         echo "❌ 部署已取消"
+#         exit 1
+#     fi
+# fi
 
-# 拉取最新代码
-git pull origin main
-echo "✅ 代码已更新"
-echo ""
+# # 拉取最新代码
+# git pull origin main
+# echo "✅ 代码已更新"
+# echo ""
 
 # ========== 第二步：停止后端服务 ==========
 echo "🛑 [2/6] 停止后端服务..."
