@@ -6,6 +6,7 @@
 
 import os
 import time
+import json
 import uuid
 from typing import Dict, List, Any, Optional
 
@@ -238,27 +239,48 @@ async def get_chat_history(character_id: str):
 # 后台任务
 async def generate_and_store_memories(character_id: str, character_data: Dict[str, Any], role_start_time: float):
     """
-    生成并存储角色记忆
+    生成并存储角色记忆（处理字典类型字段，适配ChromaDB存储要求）
     
     Args:
         character_id: 角色ID
-        character_data: 角色数据
+        character_data: 角色完整数据（用于生成记忆）
+        role_start_time: 角色生成开始时间（用于计算完整流程耗时）
     """
-    memory_start = time.time()
+    memory_start = time.time()  # 记录记忆生成开始时间
     try:
+        # 打印：开始生成记忆（包含角色ID，方便定位）
         print(f"=== 开始生成角色 [{character_id}] 的记忆 ===")
-        # 生成记忆
+        
+        # 1. 生成记忆（count=5 控制数量，减少耗时）
         memories = character_generator.generate_memories(character_data, count=5)
         
-        # 存储记忆
-        memory_store.add_memories(character_id, memories)
-        # 计算耗时
-        memory_gen_time = time.time() - memory_start
-        total_time = time.time() - role_start_time
-        print(f"=== 角色 [{character_id}] 记忆生成耗时: {memory_gen_time:.2f} 秒 ===")
-        print(f"=== 从角色生成到记忆存储完成，总耗时: {total_time:.2f} 秒 ===")
+        # 2. 关键处理：字典类型字段转JSON字符串（适配ChromaDB元数据要求）
+        processed_memories = []
+        for memory in memories:
+            processed_memory = {}
+            for key, value in memory.items():
+                # 字典类型字段序列化（如time、emotion等嵌套结构）
+                if isinstance(value, dict):
+                    processed_memory[key] = json.dumps(value, ensure_ascii=False)  # 保留中文不转义
+                else:
+                    processed_memory[key] = value  # 非字典字段直接保留
+            processed_memories.append(processed_memory)
+        
+        # 3. 存储处理后的记忆到ChromaDB
+        memory_ids = memory_store.add_memories(character_id, processed_memories)
+        print(f"角色 [{character_id}] 成功存储 {len(memory_ids)} 条记忆，记忆ID列表：{memory_ids}")
+        
+        # 4. 计算并打印耗时（清晰区分各阶段耗时）
+        memory_gen_time = time.time() - memory_start  # 记忆生成+存储耗时
+        total_time = time.time() - role_start_time    # 角色生成→记忆存储完整流程耗时
+        print(f"=== 角色 [{character_id}] 记忆生成+存储耗时: {memory_gen_time:.2f} 秒 ===")
+        print(f"=== 角色 [{character_id}] 完整流程（生成+记忆）总耗时: {total_time:.2f} 秒 ===")
+    
     except Exception as e:
-        print(f"记忆生成失败: {str(e)}")
+        # 打印详细错误信息（含堆栈，方便排查具体报错位置）
+        print(f"\n=== 记忆生成失败：角色 [{character_id}] ===")
+        print(f"错误原因：{str(e)}")
+        print(f"详细错误堆栈：\n{traceback.format_exc()}\n")
 
 # 启动服务器
 if __name__ == "__main__":

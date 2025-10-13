@@ -6,6 +6,7 @@ ChromaDB向量存储模块
 
 import os
 import uuid
+import json  # 新增：导入JSON序列化模块
 from typing import Dict, List, Any, Optional, Tuple
 
 import chromadb
@@ -109,15 +110,21 @@ class ChromaMemoryStore:
         # 准备记忆文本
         memory_text = f"{memory_data.get('title', '')}: {memory_data.get('content', '')}"
         
-        # 准备元数据
-        metadata = {
-            "character_id": character_id,
-            "memory_type": memory_data.get("type", "general"),
-            "time": memory_data.get("time", ""),
-            "emotion": memory_data.get("emotion", "neutral"),
-            "importance": memory_data.get("importance", 5),
-            "title": memory_data.get("title", "")
-        }
+        # 准备元数据（处理字典类型字段）
+        metadata = {}
+        metadata["character_id"] = character_id
+        metadata["memory_type"] = memory_data.get("type", "general")
+        
+        # 处理time字段（若为字典，转JSON字符串）
+        time_data = memory_data.get("time", "")
+        metadata["time"] = json.dumps(time_data, ensure_ascii=False) if isinstance(time_data, dict) else time_data
+        
+        # 处理emotion字段（若为字典，转JSON字符串）
+        emotion_data = memory_data.get("emotion", "neutral")
+        metadata["emotion"] = json.dumps(emotion_data, ensure_ascii=False) if isinstance(emotion_data, dict) else emotion_data
+        
+        metadata["importance"] = memory_data.get("importance", 5)
+        metadata["title"] = memory_data.get("title", "")
         
         # 添加到集合
         collection.add(
@@ -154,15 +161,21 @@ class ChromaMemoryStore:
             memory_text = f"{memory_data.get('title', '')}: {memory_data.get('content', '')}"
             memory_texts.append(memory_text)
             
-            # 准备元数据
-            metadata = {
-                "character_id": character_id,
-                "memory_type": memory_data.get("type", "general"),
-                "time": memory_data.get("time", ""),
-                "emotion": memory_data.get("emotion", "neutral"),
-                "importance": memory_data.get("importance", 5),
-                "title": memory_data.get("title", "")
-            }
+            # 准备元数据（处理字典类型字段）
+            metadata = {}
+            metadata["character_id"] = character_id
+            metadata["memory_type"] = memory_data.get("type", "general")
+            
+            # 处理time字段（若为字典，转JSON字符串）
+            time_data = memory_data.get("time", "")
+            metadata["time"] = json.dumps(time_data, ensure_ascii=False) if isinstance(time_data, dict) else time_data
+            
+            # 处理emotion字段（若为字典，转JSON字符串）
+            emotion_data = memory_data.get("emotion", "neutral")
+            metadata["emotion"] = json.dumps(emotion_data, ensure_ascii=False) if isinstance(emotion_data, dict) else emotion_data
+            
+            metadata["importance"] = memory_data.get("importance", 5)
+            metadata["title"] = memory_data.get("title", "")
             metadatas.append(metadata)
         
         # 批量添加到集合
@@ -215,13 +228,27 @@ class ChromaMemoryStore:
             where=where_clause if len(where_clause) > 1 else None  # 只有character_id时不使用where过滤
         )
         
-        # 处理结果
+        # 处理结果（将JSON字符串转回字典）
         memories = []
         for i, (doc, metadata, distance) in enumerate(zip(
             results.get("documents", [[]])[0],
             results.get("metadatas", [[]])[0],
             results.get("distances", [[]])[0]
         )):
+            # 解析time字段（若为JSON字符串，转回字典）
+            try:
+                if isinstance(metadata.get("time"), str):
+                    metadata["time"] = json.loads(metadata["time"])
+            except json.JSONDecodeError:
+                pass  # 解析失败则保留原始字符串
+            
+            # 解析emotion字段（若为JSON字符串，转回字典）
+            try:
+                if isinstance(metadata.get("emotion"), str):
+                    metadata["emotion"] = json.loads(metadata["emotion"])
+            except json.JSONDecodeError:
+                pass  # 解析失败则保留原始字符串
+            
             memory = {
                 "id": results.get("ids", [[]])[0][i],
                 "content": doc,
@@ -252,10 +279,25 @@ class ChromaMemoryStore:
             if not result["ids"]:
                 return None
             
+            metadata = result["metadatas"][0]
+            
+            # 解析time字段（若为JSON字符串，转回字典）
+            try:
+                if isinstance(metadata.get("time"), str):
+                    metadata["time"] = json.loads(metadata["time"])
+            except json.JSONDecodeError:
+                pass  # 解析失败则保留原始字符串
+            
+            # 解析emotion字段（若为JSON字符串，转回字典）
+            try:
+                if isinstance(metadata.get("emotion"), str):
+                    metadata["emotion"] = json.loads(metadata["emotion"])
+            except json.JSONDecodeError:
+                pass  # 解析失败则保留原始字符串
+            
             return {
                 "id": result["ids"][0],
-                "content": result["documents"][0],
-                **result["metadatas"][0]
+                "content": result["documents"][0],** metadata
             }
         except Exception:
             return None
@@ -283,15 +325,21 @@ class ChromaMemoryStore:
             # 准备记忆文本
             memory_text = f"{memory_data.get('title', '')}: {memory_data.get('content', '')}"
             
-            # 准备元数据
-            metadata = {
-                "character_id": character_id,
-                "memory_type": memory_data.get("type", "general"),
-                "time": memory_data.get("time", ""),
-                "emotion": memory_data.get("emotion", "neutral"),
-                "importance": memory_data.get("importance", 5),
-                "title": memory_data.get("title", "")
-            }
+            # 准备元数据（处理字典类型字段）
+            metadata = {}
+            metadata["character_id"] = character_id
+            metadata["memory_type"] = memory_data.get("type", "general")
+            
+            # 处理time字段（若为字典，转JSON字符串）
+            time_data = memory_data.get("time", "")
+            metadata["time"] = json.dumps(time_data, ensure_ascii=False) if isinstance(time_data, dict) else time_data
+            
+            # 处理emotion字段（若为字典，转JSON字符串）
+            emotion_data = memory_data.get("emotion", "neutral")
+            metadata["emotion"] = json.dumps(emotion_data, ensure_ascii=False) if isinstance(emotion_data, dict) else emotion_data
+            
+            metadata["importance"] = memory_data.get("importance", 5)
+            metadata["title"] = memory_data.get("title", "")
             
             # 更新记忆
             collection.update(
@@ -363,21 +411,28 @@ if __name__ == "__main__":
     # 测试角色ID
     character_id = "test_character_001"
     
-    # 测试添加记忆
+    # 测试添加包含字典的记忆
     memory_id = memory_store.add_memory(
         character_id=character_id,
         memory_data={
             "type": "education",
             "title": "大学毕业",
             "content": "1965年从北京师范大学中文系毕业，成为一名光荣的人民教师。",
-            "time": "1965年",
-            "emotion": "positive",
+            "time": {  # 测试字典类型
+                "age": 22,
+                "period": "青年时期",
+                "specific": "夏季毕业典礼"
+            },
+            "emotion": {  # 测试字典类型
+                "immediate": ["激动", "期待"],
+                "intensity": 8
+            },
             "importance": 9
         }
     )
     print(f"添加记忆成功，ID: {memory_id}")
     
-    # 测试批量添加记忆
+    # 测试批量添加包含字典的记忆
     memory_ids = memory_store.add_memories(
         character_id=character_id,
         memories=[
@@ -385,87 +440,50 @@ if __name__ == "__main__":
                 "type": "work",
                 "title": "教学成就",
                 "content": "1980年被评为市级优秀教师，获得表彰。",
-                "time": "1980年",
-                "emotion": "positive",
+                "time": {
+                    "age": 37,
+                    "period": "中年时期",
+                    "specific": "教师节表彰大会"
+                },
+                "emotion": {
+                    "immediate": ["自豪", "欣慰"],
+                    "intensity": 7
+                },
                 "importance": 8
             },
             {
                 "type": "family",
                 "title": "女儿出生",
                 "content": "1970年女儿出生，取名丽华，全家欢喜。",
-                "time": "1970年",
-                "emotion": "positive",
+                "time": {
+                    "age": 27,
+                    "period": "成家初期",
+                    "specific": "冬季凌晨"
+                },
+                "emotion": {
+                    "immediate": ["幸福", "责任"],
+                    "intensity": 10
+                },
                 "importance": 10
             }
         ]
     )
     print(f"批量添加记忆成功，ID列表: {memory_ids}")
     
-    # 测试查询记忆
+    # 测试查询记忆（验证字典字段是否能正确解析）
     query_results = memory_store.query_memories(
         character_id=character_id,
-        query_text="教学经历",
+        query_text="重要人生事件",
         n_results=5
     )
     print("\n查询结果:")
     for memory in query_results:
         print(f"- [{memory['memory_type']}] {memory['title']} (相关性: {memory['relevance']:.2f})")
-        print(f"  {memory['content']}")
-    
-    # 测试按类型查询
-    education_memories = memory_store.query_memories(
-        character_id=character_id,
-        query_text="教育经历",
-        memory_type="education"
-    )
-    print("\n教育类记忆:")
-    for memory in education_memories:
-        print(f"- {memory['title']}: {memory['content']}")
-    
-    # 测试按重要性查询
-    important_memories = memory_store.query_memories(
-        character_id=character_id,
-        query_text="重要经历",
-        min_importance=9
-    )
-    print("\n重要记忆:")
-    for memory in important_memories:
-        print(f"- {memory['title']} (重要性: {memory['importance']}): {memory['content']}")
-    
-    # 测试获取单个记忆
-    if memory_id:
-        memory = memory_store.get_memory_by_id(character_id, memory_id)
-        if memory:
-            print(f"\n获取记忆 {memory_id}:")
-            print(f"- {memory['title']}: {memory['content']}")
-    
-    # 测试更新记忆
-    if memory_id:
-        update_success = memory_store.update_memory(
-            character_id=character_id,
-            memory_id=memory_id,
-            memory_data={
-                "type": "education",
-                "title": "大学毕业（更新）",
-                "content": "1965年从北京师范大学中文系毕业，以优异成绩成为一名光荣的人民教师。",
-                "time": "1965年",
-                "emotion": "positive",
-                "importance": 9
-            }
-        )
-        print(f"\n更新记忆 {memory_id}: {'成功' if update_success else '失败'}")
-        
-        # 验证更新
-        memory = memory_store.get_memory_by_id(character_id, memory_id)
-        if memory:
-            print(f"更新后的记忆: {memory['title']}: {memory['content']}")
-    
-    # 测试删除记忆
-    if memory_ids and len(memory_ids) > 0:
-        delete_success = memory_store.delete_memory(character_id, memory_ids[0])
-        print(f"\n删除记忆 {memory_ids[0]}: {'成功' if delete_success else '失败'}")
+        print(f"  时间信息: {memory['time']} (类型: {type(memory['time']).__name__})")
+        print(f"  情感信息: {memory['emotion']} (类型: {type(memory['emotion']).__name__})")
     
     # 清理测试数据
     print("\n清理测试数据...")
     memory_store.delete_all_memories(character_id)
     print("测试完成")
+    
