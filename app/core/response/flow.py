@@ -164,9 +164,9 @@ class ResponseFlow:
         print(f"{'='*50}\n")
         
         # 过滤掉相关性较低的记忆
-        relevant_memories = [m for m in memories if m.get("relevance", 0) > 0.6]
+        relevant_memories = [m for m in memories if m.get("relevance", 0) > 0.3]
         
-        print(f"过滤后保留 {len(relevant_memories)} 条高相关性记忆 (relevance > 0.6)")
+        print(f"过滤后保留 {len(relevant_memories)} 条高相关性记忆 (relevance > 0.3)")
         
         return relevant_memories
     
