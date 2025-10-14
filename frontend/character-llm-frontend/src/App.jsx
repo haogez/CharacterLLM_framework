@@ -102,22 +102,23 @@ function App() {
     if (!chatMessage.trim()) return;
 
     const userMessage = chatMessage;
-    setChatHistory([...chatHistory, { role: 'user', content: userMessage }]);
+    // 1. 记录当前聊天记录长度（用于“思考中”占位的索引）
+    const thinkingIndex = chatHistory.length;
+    // 2. 添加用户消息和“思考中”占位
+    setChatHistory([
+      ...chatHistory,
+      { role: 'user', content: userMessage },
+      { role: 'thinking', content: '正在思考...' }
+    ]);
     setChatMessage('');
 
-    // 添加"思考中"的占位消息
-    const thinkingMessageIndex = chatHistory.length + 1;
-    setChatHistory(prev => [...prev, { role: 'thinking', content: '正在思考...' }]);
-
     try {
-      // 过滤对话历史，只保留 role 和 content 字段，排除系统消息
+      // 3. 构造对话历史（过滤并格式化）
       const cleanHistory = chatHistory
         .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-        .map(msg => ({
-          role: msg.role,
-          content: msg.content
-        }));
+        .map(msg => ({ role: msg.role, content: msg.content }));
 
+      // 4. 发起对话请求
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -128,39 +129,68 @@ function App() {
         })
       });
 
-      if (!response.ok) throw new Error('对话失败');
+      if (!response.ok) throw new Error(`HTTP错误：${response.status}`);
+      const chatResponses = await response.json(); // 后端返回的响应数组
 
-      const data = await response.json();
-      
-      // 移除"思考中"消息，添加实际回复
-      setChatHistory(prev => {
-        const newHistory = prev.filter((_, index) => index !== thinkingMessageIndex);
-        return [...newHistory, { 
-          role: 'assistant', 
-          content: data.message,
-          type: data.type,
-          hasMemories: data.memories && data.memories.length > 0
-        }];
-      });
-
-      // 如果是immediate类型，显示"记忆检索中"提示
-      if (data.type === 'immediate') {
-        setChatHistory(prev => [...prev, { 
-          role: 'memory-searching', 
-          content: '🔍 正在检索相关记忆，准备补充回答...' 
-        }]);
-
-        // 模拟等待补充响应（实际应该通过WebSocket或轮询获取）
-        setTimeout(() => {
-          setChatHistory(prev => prev.filter(msg => msg.role !== 'memory-searching'));
-        }, 3000);
+      // 5. 处理所有响应
+      let updatedHistory = [...chatHistory, { role: 'user', content: userMessage }]; // 基于用户消息初始化
+      for (const resp of chatResponses) {
+        switch (resp.type) {
+          case 'immediate':
+            updatedHistory.push({
+              role: 'assistant',
+              content: resp.message,
+              type: resp.type,
+              hasMemories: resp.memories?.length > 0
+            });
+            updatedHistory.push({
+              role: 'memory-searching',
+              content: '🔍 正在检索相关记忆，准备补充回答...'
+            });
+            break;
+          case 'supplementary':
+            updatedHistory = updatedHistory.map((msg, idx) => 
+              idx === thinkingIndex + 1 // 替换“思考中”后的“记忆检索中”提示
+                ? {
+                    role: 'assistant',
+                    content: resp.message + (resp.memories ? `\n\n（关联记忆：${resp.memories[0].title}）` : ''),
+                    type: resp.type,
+                    hasMemories: resp.memories?.length > 0
+                  }
+                : msg
+            );
+            break;
+          case 'direct':
+          case 'no_memory':
+            updatedHistory.push({
+              role: 'assistant',
+              content: resp.message,
+              type: resp.type,
+              hasMemories: resp.memories?.length > 0
+            });
+            break;
+          default:
+            updatedHistory.push({
+              role: 'assistant',
+              content: `[未知类型] ${resp.message}`,
+              type: 'unknown'
+            });
+        }
       }
+
+      // 6. 移除“思考中”占位，更新最终聊天记录
+      setChatHistory(
+        updatedHistory.filter(msg => msg.role !== 'thinking')
+      );
+
     } catch (error) {
-      // 移除"思考中"消息，添加错误消息
-      setChatHistory(prev => {
-        const newHistory = prev.filter((_, index) => index !== thinkingMessageIndex);
-        return [...newHistory, { role: 'error', content: `错误: ${error.message}` }];
-      });
+      console.error('对话请求失败：', error);
+      setChatHistory(prev => 
+        prev.filter(msg => msg.role !== 'thinking').concat({
+          role: 'error',
+          content: `对话失败：${error.message}`
+        })
+      );
     }
   };
 
