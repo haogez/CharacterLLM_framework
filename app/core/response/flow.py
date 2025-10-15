@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import json
 import time
 from typing import Dict, List, Any, Optional, AsyncGenerator
 
@@ -40,12 +41,17 @@ class ResponseFlow:
                      user_input: str,
                      conversation_history: List[Dict[str, str]] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """主流程：仅保留核心逻辑，无硬编码提取步骤"""
+        start_time = time.time() # 添加开始时间
         # 1. 判断是否需要记忆（基于LLM自主分析，不做硬编码规则）
         needs_memory = await self._needs_memory(character_data, user_input)
         
         if not needs_memory:
             direct_resp = await self._generate_direct_response(character_data, user_input, conversation_history)
-            yield {"type": "direct", "content": direct_resp, "timestamp": time.time()}
+            yield {
+                "type": "direct", 
+                "content": direct_resp, 
+                "timestamp": round(time.time() - start_time, 2) # 添加时间戳
+            }
             return
         
         # 2. 三阶段流程（记忆检索返回完整格式，不做提前提取）
@@ -53,7 +59,11 @@ class ResponseFlow:
         memory_task = asyncio.create_task(self._retrieve_relevant_memories(character_id, user_input))
         
         # 返回下意识响应
-        yield {"type": "immediate", "content": immediate_resp, "timestamp": time.time()}
+        yield {
+            "type": "immediate", 
+            "content": immediate_resp, 
+            "timestamp": round(time.time() - start_time, 2) # 添加时间戳
+        }
         
         # 处理记忆结果
         memories = await memory_task
@@ -64,12 +74,16 @@ class ResponseFlow:
             yield {
                 "type": "supplementary",
                 "content": supplementary_resp,
-                "timestamp": time.time(),
+                "timestamp": round(time.time() - start_time, 2), # 添加时间戳
                 "memories": memories
             }
         else:
             no_memory_resp = await self._generate_no_memory_response(character_data, user_input, immediate_resp)
-            yield {"type": "no_memory", "content": no_memory_resp, "timestamp": time.time()}
+            yield {
+                "type": "no_memory", 
+                "content": no_memory_resp, 
+                "timestamp": round(time.time() - start_time, 2) # 添加时间戳
+            }
     
     # ------------------------------
     # 核心优化：补充响应生成（无硬编码提取，全靠LLM自主解析）
@@ -86,8 +100,12 @@ class ResponseFlow:
         2. 通过Prompt引导LLM自主识别关键信息（地点/人物/感官细节）
         3. 按记忆类型规则要求LLM关联细节，不做代码强制
         """
-        print(f"\n=== 生成补充响应（完整记忆格式输入） ===")
-        print(f"记忆数量：{len(memories)} | 涉及类型：{[mem.get('type', '未定义') for mem in memories]}")
+        print("\n" + "="*60)
+        print("📝  生成补充响应...")
+        print(f"   角色: {character_data.get('name')}")
+        print(f"   用户输入: {user_input}")
+        print(f"   记忆数量: {len(memories)} | 涉及类型: {[mem.get('type', '未定义') for mem in memories]}")
+        print("="*60)
         
         # 1. 结构化呈现完整记忆（保留所有子字段，不做任何提取/过滤）
         formatted_memories = []
@@ -153,8 +171,7 @@ class ResponseFlow:
             None,
             lambda: self.character_llm.client.generate_response(
                 system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=0.7  # 保留自然回忆的随机性
+                user_prompt=user_prompt
             )
         )
         
@@ -165,12 +182,12 @@ class ResponseFlow:
                 None,
                 lambda: self.character_llm.client.generate_response(
                     system_prompt=system_prompt + "\n⚠️  警告：响应过短！请务必融入记忆中的时间、情绪、行为影响等细节，长度≥250字！",
-                    user_prompt=user_prompt,
-                    temperature=0.6
+                    user_prompt=user_prompt
                 )
             )
         
-        print(f"补充响应生成完成（长度：{len(response.strip())}字）")
+        print(f"✅ 补充响应生成完成 (长度: {len(response.strip())}字)")
+        print("="*60 + "\n")
         return response.strip()
     
     # ------------------------------
@@ -197,34 +214,34 @@ class ResponseFlow:
         return result.strip().upper() == "YES"
     
     async def _retrieve_relevant_memories(self, character_id: str, query_text: str, n_results: int = 3) -> List[Dict[str, Any]]:
-        """记忆检索：仅返回完整格式，不做任何硬编码过滤（除相关性）"""
-        print(f"\n=== 检索记忆 ===")
-        print(f"角色ID：{character_id} | 查询文本：{query_text}")
+        print("\n" + "="*60)
+        print("🔍  开始检索记忆...")
+        print(f"   角色ID: {character_id}")
+        print(f"   查询文本: {query_text}")
+        print("="*60)
         
         start_time = time.time()
         loop = asyncio.get_event_loop()
-        # 直接获取完整记忆格式，仅过滤相关性>0.3的记忆（基础过滤，无硬编码提取）
         raw_memories = await loop.run_in_executor(
             None,
             lambda: self.memory_store.query_memories(
                 character_id=character_id,
                 query_text=query_text,
                 n_results=n_results,
-                return_full_fields=True  # 关键：获取完整记忆格式
+                return_full_fields=True
             )
         )
         
-        # 仅保留高相关性记忆，不做其他硬编码处理
         relevant_memories = [mem for mem in raw_memories if mem.get('relevance', 0) > 0.3]
         
-        # 日志仅打印基础字段，不做硬编码提取
-        print(f"检索耗时：{time.time()-start_time:.2f}秒 | 高相关性记忆数：{len(relevant_memories)}")
+        print(f"⏱️  检索耗时: {time.time()-start_time:.2f}秒")
+        print(f"📊 高相关性记忆数: {len(relevant_memories)}")
         for idx, mem in enumerate(relevant_memories, 1):
-            print(f"  记忆{idx}：类型={mem.get('type')} | 标题={mem.get('title')} | 相关性={mem.get('relevance', 0):.2f}")
+            print(f"   📌 记忆{idx}: 类型={mem.get('type')} | 标题={mem.get('title')} | 相关性={mem.get('relevance', 0):.2f}")
         
+        print("="*60 + "\n")
         return relevant_memories
     
-    # 以下方法均移除硬编码提取，仅靠Prompt引导LLM
     async def _generate_direct_response(self, character_data: Dict[str, Any], user_input: str, conversation_history: List[Dict[str, str]] = None) -> str:
         system_prompt = f"""
 你是{character_data.get('name')}，需基于以下人设回答，不涉及任何过往记忆：

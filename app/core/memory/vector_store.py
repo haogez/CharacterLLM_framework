@@ -89,15 +89,15 @@ class ChromaMemoryStore:
             raise ValueError(f"Collection {name} not found: {str(e)}")
     
     def add_memory(self, 
-                  character_id: str, 
-                  memory_data: Dict[str, Any]) -> str:
+                character_id: str, 
+                memory_data: Dict[str, Any]) -> str:
         """
-        添加记忆
+        添加单个记忆（完整支持所有记忆字段存储）
         
         Args:
             character_id: 角色ID
-            memory_data: 记忆数据
-            
+            memory_data: 记忆数据（需包含完整字段）
+                
         Returns:
             记忆ID
         """
@@ -110,21 +110,36 @@ class ChromaMemoryStore:
         # 准备记忆文本
         memory_text = f"{memory_data.get('title', '')}: {memory_data.get('content', '')}"
         
-        # 准备元数据（处理字典类型字段）
-        metadata = {}
-        metadata["character_id"] = character_id
-        metadata["memory_type"] = memory_data.get("type", "general")
+        # 准备元数据（处理所有嵌套字段的JSON序列化）
+        metadata = {
+            "character_id": character_id,
+            "type": memory_data.get("type", "general"),
+            "title": memory_data.get("title", "")
+        }
         
-        # 处理time字段（若为字典，转JSON字符串）
-        time_data = memory_data.get("time", "")
+        # 处理time字段（嵌套字典转JSON）
+        time_data = memory_data.get("time", {})
         metadata["time"] = json.dumps(time_data, ensure_ascii=False) if isinstance(time_data, dict) else time_data
         
-        # 处理emotion字段（若为字典，转JSON字符串）
-        emotion_data = memory_data.get("emotion", "neutral")
+        # 处理emotion字段
+        emotion_data = memory_data.get("emotion", {})
         metadata["emotion"] = json.dumps(emotion_data, ensure_ascii=False) if isinstance(emotion_data, dict) else emotion_data
         
-        metadata["importance"] = memory_data.get("importance", 5)
-        metadata["title"] = memory_data.get("title", "")
+        # 处理importance字段
+        importance_data = memory_data.get("importance", {})
+        metadata["importance"] = json.dumps(importance_data, ensure_ascii=False) if isinstance(importance_data, dict) else importance_data
+        
+        # 处理behavior_impact字段
+        behavior_data = memory_data.get("behavior_impact", {})
+        metadata["behavior_impact"] = json.dumps(behavior_data, ensure_ascii=False) if isinstance(behavior_data, dict) else behavior_data
+        
+        # 处理trigger_system字段
+        trigger_data = memory_data.get("trigger_system", {})
+        metadata["trigger_system"] = json.dumps(trigger_data, ensure_ascii=False) if isinstance(trigger_data, dict) else trigger_data
+        
+        # 处理memory_distortion字段
+        distortion_data = memory_data.get("memory_distortion", {})
+        metadata["memory_distortion"] = json.dumps(distortion_data, ensure_ascii=False) if isinstance(distortion_data, dict) else distortion_data
         
         # 添加到集合
         collection.add(
@@ -137,64 +152,87 @@ class ChromaMemoryStore:
     
     def add_memories(self, 
                     character_id: str, 
-                    memories: List[Dict[str, Any]]) -> List[str]:
+                    memories_data: List[Dict[str, Any]]) -> List[str]:
         """
-        批量添加记忆
+        批量添加记忆（支持完整字段存储）
         
         Args:
             character_id: 角色ID
-            memories: 记忆数据列表
-            
+            memories_data: 记忆数据列表
+                
         Returns:
             记忆ID列表
         """
         collection_name = self.get_character_collection_name(character_id)
         collection = self.create_collection(collection_name)
         
-        # 准备批量添加数据
-        memory_ids = [str(uuid.uuid4()) for _ in range(len(memories))]
-        memory_texts = []
+        memory_ids = []
+        documents = []
         metadatas = []
+        ids = []
         
-        for memory_data in memories:
+        for memory_data in memories_data:
+            # 生成记忆ID
+            memory_id = str(uuid.uuid4())
+            memory_ids.append(memory_id)
+            
             # 准备记忆文本
             memory_text = f"{memory_data.get('title', '')}: {memory_data.get('content', '')}"
-            memory_texts.append(memory_text)
             
-            # 准备元数据（处理字典类型字段）
-            metadata = {}
-            metadata["character_id"] = character_id
-            metadata["memory_type"] = memory_data.get("type", "general")
+            # 准备元数据（处理所有嵌套字段的JSON序列化）
+            metadata = {
+                "character_id": character_id,
+                "type": memory_data.get("type", "general"),
+                "title": memory_data.get("title", "")
+            }
             
-            # 处理time字段（若为字典，转JSON字符串）
-            time_data = memory_data.get("time", "")
+            # 处理time字段（嵌套字典转JSON）
+            time_data = memory_data.get("time", {})
             metadata["time"] = json.dumps(time_data, ensure_ascii=False) if isinstance(time_data, dict) else time_data
             
-            # 处理emotion字段（若为字典，转JSON字符串）
-            emotion_data = memory_data.get("emotion", "neutral")
+            # 处理emotion字段
+            emotion_data = memory_data.get("emotion", {})
             metadata["emotion"] = json.dumps(emotion_data, ensure_ascii=False) if isinstance(emotion_data, dict) else emotion_data
             
-            metadata["importance"] = memory_data.get("importance", 5)
-            metadata["title"] = memory_data.get("title", "")
+            # 处理importance字段
+            importance_data = memory_data.get("importance", {})
+            metadata["importance"] = json.dumps(importance_data, ensure_ascii=False) if isinstance(importance_data, dict) else importance_data
+            
+            # 处理behavior_impact字段
+            behavior_data = memory_data.get("behavior_impact", {})
+            metadata["behavior_impact"] = json.dumps(behavior_data, ensure_ascii=False) if isinstance(behavior_data, dict) else behavior_data
+            
+            # 处理trigger_system字段
+            trigger_data = memory_data.get("trigger_system", {})
+            metadata["trigger_system"] = json.dumps(trigger_data, ensure_ascii=False) if isinstance(trigger_data, dict) else trigger_data
+            
+            # 处理memory_distortion字段
+            distortion_data = memory_data.get("memory_distortion", {})
+            metadata["memory_distortion"] = json.dumps(distortion_data, ensure_ascii=False) if isinstance(distortion_data, dict) else distortion_data
+            
+            documents.append(memory_text)
             metadatas.append(metadata)
+            ids.append(memory_id)
         
         # 批量添加到集合
-        collection.add(
-            documents=memory_texts,
-            metadatas=metadatas,
-            ids=memory_ids
-        )
+        if documents:  # 确保有数据才添加
+            collection.add(
+                documents=documents,
+                metadatas=metadatas,
+                ids=ids
+            )
         
         return memory_ids
     
     def query_memories(self, 
-                      character_id: str, 
-                      query_text: str, 
-                      n_results: int = 5,
-                      memory_type: Optional[str] = None,
-                      min_importance: Optional[int] = None) -> List[Dict[str, Any]]:
+                character_id: str, 
+                query_text: str, 
+                n_results: int = 5,
+                memory_type: Optional[str] = None,
+                min_importance: Optional[int] = None,
+                return_full_fields: bool = False) -> List[Dict[str, Any]]:
         """
-        查询记忆
+        查询记忆（完整支持所有字段反序列化和字段映射）
         
         Args:
             character_id: 角色ID
@@ -202,22 +240,22 @@ class ChromaMemoryStore:
             n_results: 返回结果数量
             memory_type: 记忆类型过滤
             min_importance: 最小重要性过滤
-            
+            return_full_fields: 是否返回完整记忆字段
+                    
         Returns:
-            记忆列表
+            记忆列表（包含所有必填字段）
         """
         collection_name = self.get_character_collection_name(character_id)
         
         try:
             collection = self.get_collection(collection_name)
         except ValueError:
-            # 如果集合不存在，返回空列表
-            return []
+            return []  # 集合不存在，返回空列表
         
         # 准备查询过滤条件
         where_clause = {"character_id": character_id}
         if memory_type:
-            where_clause["memory_type"] = memory_type
+            where_clause["type"] = memory_type  # 使用type字段过滤
         if min_importance is not None:
             where_clause["importance"] = {"$gte": min_importance}
         
@@ -225,36 +263,55 @@ class ChromaMemoryStore:
         results = collection.query(
             query_texts=[query_text],
             n_results=n_results,
-            where=where_clause if len(where_clause) > 1 else None  # 只有character_id时不使用where过滤
+            where=where_clause if len(where_clause) > 1 else None
         )
         
-        # 处理结果（将JSON字符串转回字典）
+        # 处理结果（完整反序列化所有字段）
         memories = []
         for i, (doc, metadata, distance) in enumerate(zip(
             results.get("documents", [[]])[0],
             results.get("metadatas", [[]])[0],
             results.get("distances", [[]])[0]
         )):
-            # 解析time字段（若为JSON字符串，转回字典）
-            try:
-                if isinstance(metadata.get("time"), str):
-                    metadata["time"] = json.loads(metadata["time"])
-            except json.JSONDecodeError:
-                pass  # 解析失败则保留原始字符串
+            # 核心修复1：字段名映射（兼容旧数据）
+            if "type" not in metadata and "memory_type" in metadata:
+                metadata["type"] = metadata["memory_type"]
             
-            # 解析emotion字段（若为JSON字符串，转回字典）
-            try:
-                if isinstance(metadata.get("emotion"), str):
-                    metadata["emotion"] = json.loads(metadata["emotion"])
-            except json.JSONDecodeError:
-                pass  # 解析失败则保留原始字符串
+            # 核心修复2：完整反序列化所有嵌套字段
+            nested_fields = [
+                "time", "emotion", "importance", 
+                "behavior_impact", "trigger_system", "memory_distortion"
+            ]
+            for key in nested_fields:
+                if key in metadata and isinstance(metadata[key], str):
+                    try:
+                        metadata[key] = json.loads(metadata[key])
+                    except json.JSONDecodeError:
+                        # 容错处理：解析失败时保留原始字符串并添加错误标记
+                        metadata[key] = {
+                            "raw_value": metadata[key],
+                            "parse_error": True
+                        }
             
-            memory = {
-                "id": results.get("ids", [[]])[0][i],
-                "content": doc,
-                "relevance": 1.0 - (distance / 2.0),  # 转换距离为相关性分数
-                **metadata
-            }
+            # 计算相关性分数
+            relevance = 1.0 - (distance / 2.0)
+            
+            # 构建返回结构
+            if return_full_fields:
+                memory = {
+                    "id": results.get("ids", [[]])[0][i],
+                    "content": doc,
+                    "relevance": round(relevance, 3),** metadata
+                }
+            else:
+                memory = {
+                    "id": results.get("ids", [[]])[0][i],
+                    "type": metadata.get("type"),
+                    "title": metadata.get("title"),
+                    "content": doc,
+                    "relevance": round(relevance, 3)
+                }
+            
             memories.append(memory)
         
         return memories

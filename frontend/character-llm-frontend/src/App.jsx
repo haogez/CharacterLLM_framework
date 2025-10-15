@@ -29,41 +29,41 @@ function App() {
 
   const generateCharacter = async () => {
     if (!description.trim()) {
-    setMessage({ type: 'error', text: '请输入角色描述' });
-    return;
+      setMessage({ type: 'error', text: '请输入角色描述' });
+      return;
     }
 
     setLoading(true);
-    setMessage({ type: '', text: '' });
-
-    // // 1. 创建超时控制器（30秒超时）
-    // const controller = new AbortController();
-    // const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒后取消请求
+    setMessage({ type: '', text: '正在生成角色...' });
 
     try {
       const response = await fetch(`${API_BASE_URL}/characters/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description }),
-        // signal: controller.signal, // 关联超时控制器
       });
-
-      // clearTimeout(timeoutId); // 清除超时定时器（如果请求提前完成）
 
       if (!response.ok) throw new Error(`HTTP错误：${response.status}`);
 
       const data = await response.json();
-      setMessage({ type: 'success', text: '角色生成成功！' });
+      
+      // 显示生成进度和时间
+      const genInfo = data.generation_info;
+      let messageText = `角色生成成功！\n`;
+      if (genInfo) {
+        messageText += `角色生成耗时: ${genInfo.role_gen_time}秒\n`;
+        if (genInfo.memory_gen_time) {
+          messageText += `记忆生成耗时: ${genInfo.memory_gen_time}秒\n`;
+          messageText += `总耗时: ${genInfo.total_time}秒`;
+        }
+      }
+      
+      setMessage({ type: 'success', text: messageText });
       setDescription('');
       loadCharacters();
     } catch (error) {
-      console.error("角色生成失败原因：", error); // 新增：打印错误详情
-      // 区分“超时错误”和“其他错误”
-      if (error.name === 'AbortError') {
-        setMessage({ type: 'error', text: '角色生成超时，请稍后重试' });
-      } else {
-        setMessage({ type: 'error', text: `生成失败: ${error.message}` });
-      }
+      console.error("角色生成失败原因：", error);
+      setMessage({ type: 'error', text: `生成失败: ${error.message}` });
     } finally {
       setLoading(false);
     }
@@ -102,23 +102,18 @@ function App() {
     if (!chatMessage.trim()) return;
 
     const userMessage = chatMessage;
-    // 1. 记录当前聊天记录长度（用于“思考中”占位的索引）
-    const thinkingIndex = chatHistory.length;
-    // 2. 添加用户消息和“思考中”占位
-    setChatHistory([
-      ...chatHistory,
-      { role: 'user', content: userMessage },
-      { role: 'thinking', content: '正在思考...' }
-    ]);
+    
+    // 添加用户消息
+    setChatHistory(prev => [...prev, { role: 'user', content: userMessage }]);
     setChatMessage('');
 
     try {
-      // 3. 构造对话历史（过滤并格式化）
+      // 构造对话历史
       const cleanHistory = chatHistory
         .filter(msg => msg.role === 'user' || msg.role === 'assistant')
         .map(msg => ({ role: msg.role, content: msg.content }));
 
-      // 4. 发起对话请求
+      // 发起对话请求
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -130,67 +125,83 @@ function App() {
       });
 
       if (!response.ok) throw new Error(`HTTP错误：${response.status}`);
-      const chatResponses = await response.json(); // 后端返回的响应数组
+      const chatResponses = await response.json();
 
-      // 5. 处理所有响应
-      let updatedHistory = [...chatHistory, { role: 'user', content: userMessage }]; // 基于用户消息初始化
+      // 处理多阶段响应
+      let updatedHistory = [...chatHistory, { role: 'user', content: userMessage }];
+      const messagesToAdd = [];
+
       for (const resp of chatResponses) {
         switch (resp.type) {
           case 'immediate':
-            updatedHistory.push({
+            messagesToAdd.push({
               role: 'assistant',
               content: resp.message,
               type: resp.type,
-              hasMemories: resp.memories?.length > 0
+              hasMemories: resp.memories?.length > 0,
+              timestamp: resp.timestamp // 保存时间戳
             });
-            updatedHistory.push({
+            
+            messagesToAdd.push({
               role: 'memory-searching',
               content: '🔍 正在检索相关记忆，准备补充回答...'
             });
             break;
+
           case 'supplementary':
-            updatedHistory = updatedHistory.map((msg, idx) => 
-              idx === thinkingIndex + 1 // 替换“思考中”后的“记忆检索中”提示
-                ? {
-                    role: 'assistant',
-                    content: resp.message + (resp.memories ? `\n\n（关联记忆：${resp.memories[0].title}）` : ''),
-                    type: resp.type,
-                    hasMemories: resp.memories?.length > 0
-                  }
-                : msg
-            );
+            const lastMemoryIndex = updatedHistory.map(msg => msg.role).lastIndexOf('memory-searching');
+            if (lastMemoryIndex !== -1) {
+              updatedHistory[lastMemoryIndex] = {
+                role: 'assistant',
+                content: resp.message + (resp.memories ? `\n\n（关联记忆：${resp.memories[0].title}）` : ''),
+                type: resp.type,
+                hasMemories: resp.memories?.length > 0,
+                timestamp: resp.timestamp // 保存时间戳
+              };
+            } else {
+              messagesToAdd.push({
+                role: 'assistant',
+                content: resp.message + (resp.memories ? `\n\n（关联记忆：${resp.memories[0].title}）` : ''),
+                type: resp.type,
+                hasMemories: resp.memories?.length > 0,
+                timestamp: resp.timestamp // 保存时间戳
+              });
+            }
             break;
+
           case 'direct':
           case 'no_memory':
-            updatedHistory.push({
+            messagesToAdd.push({
               role: 'assistant',
               content: resp.message,
               type: resp.type,
-              hasMemories: resp.memories?.length > 0
+              hasMemories: resp.memories?.length > 0,
+              timestamp: resp.timestamp // 保存时间戳
             });
             break;
+
           default:
-            updatedHistory.push({
+            messagesToAdd.push({
               role: 'assistant',
               content: `[未知类型] ${resp.message}`,
-              type: 'unknown'
+              type: 'unknown',
+              timestamp: resp.timestamp // 保存时间戳
             });
         }
       }
 
-      // 6. 移除“思考中”占位，更新最终聊天记录
-      setChatHistory(
-        updatedHistory.filter(msg => msg.role !== 'thinking')
-      );
+      // 添加新消息到聊天记录
+      setChatHistory(prev => [...prev, ...messagesToAdd]);
 
     } catch (error) {
       console.error('对话请求失败：', error);
-      setChatHistory(prev => 
-        prev.filter(msg => msg.role !== 'thinking').concat({
+      setChatHistory(prev => [
+        ...prev,
+        {
           role: 'error',
           content: `对话失败：${error.message}`
-        })
-      );
+        }
+      ]);
     }
   };
 
@@ -433,11 +444,29 @@ function App() {
                         <p>开始与角色对话吧！</p>
                       </div>
                     ) : (
-                      chatHistory.map((msg, index) => (
-                        <div key={index} className={`chat-message ${msg.role}`}>
-                          <div className="message-content">{msg.content}</div>
-                        </div>
-                      ))
+                      chatHistory.map((msg, index) => {
+                        const isUser = msg.role === 'user';
+                        const isAssistant = msg.role === 'assistant';
+                        const isMemorySearching = msg.role === 'memory-searching';
+                        const isError = msg.role === 'error';
+
+                        return (
+                          <div 
+                            key={index} 
+                            className={`chat-message ${isUser ? 'user' : isAssistant ? 'assistant' : isMemorySearching ? 'memory-searching' : isError ? 'error' : 'system'}`}
+                          >
+                            <div className="message-content">
+                              {msg.content}
+                              {/* 显示响应时间 */}
+                              {isAssistant && msg.timestamp && (
+                                <span className="response-time">
+                                  （耗时: {msg.timestamp.toFixed(2)}秒）
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
 
