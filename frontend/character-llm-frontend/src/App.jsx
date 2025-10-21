@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './App.css';
 
 const API_BASE_URL = '/api/v1';
@@ -12,10 +12,19 @@ function App() {
   const [selectedCharacter, setSelectedCharacter] = useState('');
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false); // 新增：处理状态
+  const chatContainerRef = useRef(null); // 新增：滚动引用
 
   useEffect(() => {
     loadCharacters();
   }, []);
+
+  // 滚动到底部
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chatHistory]);
 
   const loadCharacters = async () => {
     try {
@@ -106,6 +115,7 @@ function App() {
     // 添加用户消息
     setChatHistory(prev => [...prev, { role: 'user', content: userMessage }]);
     setChatMessage('');
+    setIsProcessing(true); // 开始处理
 
     try {
       // 构造对话历史
@@ -113,10 +123,13 @@ function App() {
         .filter(msg => msg.role === 'user' || msg.role === 'assistant')
         .map(msg => ({ role: msg.role, content: msg.content }));
 
-      // 发起对话请求
+      // 使用 fetch 发送请求并接收 SSE 响应
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream' // 明确指定接受SSE
+        },
         body: JSON.stringify({
           character_id: selectedCharacter,
           message: userMessage,
@@ -125,73 +138,70 @@ function App() {
       });
 
       if (!response.ok) throw new Error(`HTTP错误：${response.status}`);
-      const chatResponses = await response.json();
 
-      // 处理多阶段响应
-      let updatedHistory = [...chatHistory, { role: 'user', content: userMessage }];
-      const messagesToAdd = [];
-
-      for (const resp of chatResponses) {
-        switch (resp.type) {
-          case 'immediate':
-            messagesToAdd.push({
-              role: 'assistant',
-              content: resp.message,
-              type: resp.type,
-              hasMemories: resp.memories?.length > 0,
-              timestamp: resp.timestamp // 保存时间戳
-            });
-            
-            messagesToAdd.push({
-              role: 'memory-searching',
-              content: '🔍 正在检索相关记忆，准备补充回答...'
-            });
-            break;
-
-          case 'supplementary':
-            const lastMemoryIndex = updatedHistory.map(msg => msg.role).lastIndexOf('memory-searching');
-            if (lastMemoryIndex !== -1) {
-              updatedHistory[lastMemoryIndex] = {
-                role: 'assistant',
-                content: resp.message + (resp.memories ? `\n\n（关联记忆：${resp.memories[0].title}）` : ''),
-                type: resp.type,
-                hasMemories: resp.memories?.length > 0,
-                timestamp: resp.timestamp // 保存时间戳
-              };
-            } else {
-              messagesToAdd.push({
-                role: 'assistant',
-                content: resp.message + (resp.memories ? `\n\n（关联记忆：${resp.memories[0].title}）` : ''),
-                type: resp.type,
-                hasMemories: resp.memories?.length > 0,
-                timestamp: resp.timestamp // 保存时间戳
-              });
-            }
-            break;
-
-          case 'direct':
-          case 'no_memory':
-            messagesToAdd.push({
-              role: 'assistant',
-              content: resp.message,
-              type: resp.type,
-              hasMemories: resp.memories?.length > 0,
-              timestamp: resp.timestamp // 保存时间戳
-            });
-            break;
-
-          default:
-            messagesToAdd.push({
-              role: 'assistant',
-              content: `[未知类型] ${resp.message}`,
-              type: 'unknown',
-              timestamp: resp.timestamp // 保存时间戳
-            });
-        }
+      // 检查 Content-Type 是否为 text/event-stream
+      const contentType = response.headers.get('Content-Type');
+      if (!contentType || !contentType.includes('text/event-stream')) {
+        throw new Error('服务器未返回SSE响应');
       }
 
-      // 添加新消息到聊天记录
-      setChatHistory(prev => [...prev, ...messagesToAdd]);
+      // 创建读取器
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      // 读取 SSE 数据
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // 解码并添加到缓冲区
+          buffer += decoder.decode(value, { stream: true });
+
+          // 按双换行符分割，处理每个事件
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop(); // 保留不完整的行
+
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            
+            // 移除 "data: " 前缀（如果存在）
+            let eventLine = line.trim();
+            if (eventLine.startsWith('data: ')) {
+              eventLine = eventLine.substring(6);
+            } else if (eventLine.startsWith(' ')) {
+              // 如果以空格开头，移除它
+              eventLine = eventLine.substring(1);
+            }
+
+            try {
+              const data = JSON.parse(eventLine);
+              
+              // 检查是否是错误消息
+              if (data.error) {
+                throw new Error(data.error);
+              }
+
+              // 添加到聊天历史
+              const newMessage = {
+                role: 'assistant',
+                content: data.message,
+                type: data.type,
+                hasMemories: data.memories?.length > 0,
+                timestamp: data.timestamp,
+                memories: data.memories
+              };
+
+              setChatHistory(prev => [...prev, newMessage]);
+            } catch (e) {
+              console.error('解析SSE数据失败:', e, '原始数据:', eventLine);
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
 
     } catch (error) {
       console.error('对话请求失败：', error);
@@ -202,6 +212,8 @@ function App() {
           content: `对话失败：${error.message}`
         }
       ]);
+    } finally {
+      setIsProcessing(false); // 结束处理
     }
   };
 
@@ -255,8 +267,7 @@ function App() {
                 <h2 className="card-title">创建新角色</h2>
                 <p className="card-description">
                   输入角色描述，系统将自动生成详细的角色档案，
-
-包括性格、背景、语言风格等。
+                  包括性格、背景、语言风格等。
                 </p>
 
                 <div className="form-group">
@@ -437,7 +448,7 @@ function App() {
                 </div>
 
                 <div className="chat-container">
-                  <div className="chat-history">
+                  <div className="chat-history" ref={chatContainerRef}>
                     {chatHistory.length === 0 ? (
                       <div className="chat-empty">
                         <div className="chat-empty-icon">💭</div>
@@ -463,6 +474,21 @@ function App() {
                                   （耗时: {msg.timestamp.toFixed(2)}秒）
                                 </span>
                               )}
+                              {/* 显示关联记忆 */}
+                              {isAssistant && msg.memories && msg.memories.length > 0 && (
+                                <div className="memory-info">
+                                  <details>
+                                    <summary>关联记忆 ({msg.memories.length})</summary>
+                                    <ul>
+                                      {msg.memories.map((mem, idx) => (
+                                        <li key={idx}>
+                                          <strong>{mem.title}</strong> - {mem.content.substring(0, 50)}...
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </details>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -475,16 +501,16 @@ function App() {
                       type="text"
                       value={chatMessage}
                       onChange={(e) => setChatMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                      onKeyPress={(e) => e.key === 'Enter' && !isProcessing && sendMessage()}
                       placeholder="输入消息..."
-                      disabled={!selectedCharacter}
+                      disabled={!selectedCharacter || isProcessing}
                     />
                     <button
                       className="btn btn-primary"
                       onClick={sendMessage}
-                      disabled={!selectedCharacter || !chatMessage.trim()}
+                      disabled={!selectedCharacter || !chatMessage.trim() || isProcessing}
                     >
-                      发送
+                      {isProcessing ? '发送中...' : '发送'}
                     </button>
                   </div>
                 </div>

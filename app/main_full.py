@@ -1,6 +1,7 @@
 """
 角色化大语言模型知识库管理系统 - 完整版主应用
 适配完整记忆格式 + 多响应类型（direct/immediate/supplementary/no_memory）
+支持实时响应流（SSE）+ 直接日志输出
 """
 
 import os
@@ -12,6 +13,7 @@ from typing import Dict, List, Any, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse  # 用于SSE
 from pydantic import BaseModel  # 用于定义数据模型
 
 from app.core.character.generator import CharacterGenerator
@@ -23,7 +25,7 @@ from app.core.response.flow import ResponseFlow  # 对接优化后的flow
 app = FastAPI(
     title="角色化大语言模型知识库管理系统",
     description="支持完整记忆格式+多响应类型的AI对话框架",
-    version="2.0.0"  # 版本升级，标记适配完整记忆格式
+    version="2.2.2"  # 版本升级，标记支持实时响应流+直接日志输出
 )
 
 # 配置CORS
@@ -48,8 +50,8 @@ response_flow = ResponseFlow(character_llm, memory_store)  # 对接优化后的R
 class TimeDetail(BaseModel):
     """记忆中time字段的详细结构（对应完整记忆格式）"""
     age: int  # 角色当时年龄（整数）
-    period: str  # 人生阶段（如“工作第3年”）
-    specific: str  # 具体时间特征（如“周五加班到凌晨”）
+    period: str  # 人生阶段（如"工作第3年"）
+    specific: str  # 具体时间特征（如"周五加班到凌晨"）
 
 class EmotionDetail(BaseModel):
     """记忆中emotion字段的详细结构"""
@@ -62,7 +64,7 @@ class ImportanceDetail(BaseModel):
     """记忆中importance字段的详细结构"""
     score: int  # 重要性评分（1-10）
     reason: str  # 重要性原因
-    frequency: str  # 回忆频率（如“每月至少想起1次”）
+    frequency: str  # 回忆频率（如"每月至少想起1次"）
 
 class BehaviorImpactDetail(BaseModel):
     """记忆中behavior_impact字段的详细结构"""
@@ -72,9 +74,9 @@ class BehaviorImpactDetail(BaseModel):
 
 class TriggerSystemDetail(BaseModel):
     """记忆中trigger_system字段的详细结构"""
-    sensory: List[str]  # 感官触发点（如“闻到速溶咖啡焦味”）
-    contextual: List[str]  # 情境触发点（如“项目上线前测试”）
-    emotional: List[str]  # 情绪触发点（如“感到焦虑时”）
+    sensory: List[str]  # 感官触发点（如"闻到速溶咖啡焦味"）
+    contextual: List[str]  # 情境触发点（如"项目上线前测试"）
+    emotional: List[str]  # 情绪触发点（如"感到焦虑时"）
 
 class MemoryDistortionDetail(BaseModel):
     """记忆中memory_distortion字段的详细结构"""
@@ -138,32 +140,33 @@ class ChatResponse(BaseModel):
     message: str  # 响应内容
     type: str  # 响应类型：direct/immediate/supplementary/no_memory
     memories: Optional[List[MemoryResponse]] = None  # 关联的完整记忆（可选）
-    timestamp: Optional[float] = None  # 响应时间戳（可选））
+    timestamp: Optional[float] = None  # 响应时间戳（可选）
 
 # 内存存储角色数据（生产环境需替换为数据库）
 characters: Dict[str, Dict[str, Any]] = {}
 
 # ------------------------------------------------------------------------------
-# API路由（核心修改：对话接口、记忆查询接口）
+# API路由（核心修改：对话接口使用SSE实现实时响应流 + 直接日志输出）
 # ------------------------------------------------------------------------------
 @app.get("/")
 async def root():
-    return {"message": "欢迎使用角色化大语言模型知识库管理系统（V2.0，适配完整记忆格式）"}
+    return {"message": "欢迎使用角色化大语言模型知识库管理系统（V2.2.2，支持实时响应流+直接日志输出）"}
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "2.2.2"}
 
 @app.get("/api/v1/system/status")
 async def system_status():
     return {
         "status": "ok",
-        "version": "2.0.0",
+        "version": "2.2.2",
         "components": {
             "llm": "OpenAI GPT-4",
             "vector_db": "ChromaDB（支持完整记忆格式）",
             "character_count": len(characters),
-            "response_types": ["direct", "immediate", "supplementary", "no_memory"]
+            "response_types": ["direct", "immediate", "supplementary", "no_memory"],
+            "features": ["实时响应流", "完整记忆格式", "多响应类型", "直接日志输出"]
         }
     }
         
@@ -210,12 +213,12 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
 
 @app.get("/api/v1/characters", response_model=List[CharacterResponse])
 async def list_characters():
-    """列出所有角色（无修改）"""
+    """列出所有角色"""
     return [{"id": cid, **cdata} for cid, cdata in characters.items()]
 
 @app.get("/api/v1/characters/{character_id}", response_model=CharacterResponse)
 async def get_character(character_id: str):
-    """获取单个角色详情（无修改）"""
+    """获取单个角色详情"""
     if character_id not in characters:
         raise HTTPException(status_code=404, detail="角色不存在")
     return {"id": character_id, **characters[character_id]}
@@ -273,72 +276,91 @@ async def regenerate_character_memories(character_id: str, background_tasks: Bac
     return {"message": "完整记忆重新生成任务已启动", "character_id": character_id}
 
 # ------------------------------------------------------------------------------
-# 核心修改4：对话接口（返回所有响应，适配4种类型，反序列化记忆）
+# 核心修改4：对话接口（使用SSE实现实时响应流 + 直接日志输出）
 # ------------------------------------------------------------------------------
-@app.post("/api/v1/chat", response_model=List[ChatResponse])
+@app.post("/api/v1/chat", response_class=StreamingResponse)
 async def chat_with_character(request: ChatRequest):
-    """对话接口：返回所有响应"""
+    """对话接口：使用SSE实现实时响应流 + 直接日志输出"""
     if request.character_id not in characters:
         raise HTTPException(status_code=404, detail="角色不存在")
     character_data = characters[request.character_id]
     
-    try:
-        # 记录开始时间
-        start_time = time.time()
-        
-        # 调用flow处理对话
-        chat_responses: List[ChatResponse] = []
-        async for flow_resp in response_flow.process(
-            character_id=request.character_id,
-            character_data=character_data,
-            user_input=request.message,
-            conversation_history=request.conversation_history
-        ):
+    async def event_generator():
+        """生成SSE事件的异步生成器"""
+        try:
+            # 记录开始时间
+            start_time = time.time()
             
-            current_resp = ChatResponse(
-                message=flow_resp["content"],
-                type=flow_resp["type"],
-                memories=None,
-                timestamp=flow_resp.get("timestamp", None) # 从flow_resp中获取时间戳
-            )
+            print("\n" + "="*80)
+            print("🔄 开始处理对话请求 | 角色ID:", request.character_id)
+            print(f"📌 用户输入: {request.message}")
+            print("="*80)
             
-            
-            if "memories" in flow_resp and flow_resp["memories"]:
-                processed_mem = []
-                for mem in flow_resp["memories"]:
-                    for key in ["time", "emotion", "importance", "behavior_impact", "trigger_system", "memory_distortion"]:
-                        if key in mem and isinstance(mem[key], str):
-                            mem[key] = json.loads(mem[key])
-                    processed_mem.append(MemoryResponse(**mem))
-                current_resp.memories = processed_mem
-            
-            chat_responses.append(current_resp)
+            # 调用flow处理对话（这是一个异步生成器）
+            response_count = 0
+            async for flow_resp in response_flow.process(
+                character_id=request.character_id,
+                character_data=character_data,
+                user_input=request.message,
+                conversation_history=request.conversation_history
+            ):
+                response_count += 1
+                # 构建当前响应
+                current_resp = ChatResponse(
+                    message=flow_resp["content"],
+                    type=flow_resp["type"],
+                    memories=None,
+                    timestamp=flow_resp.get("timestamp", None)
+                )
+                
+                # 处理记忆数据（反序列化）
+                if "memories" in flow_resp and flow_resp["memories"]:
+                    processed_mem = []
+                    for mem in flow_resp["memories"]:
+                        for key in ["time", "emotion", "importance", "behavior_impact", "trigger_system", "memory_distortion"]:
+                            if key in mem and isinstance(mem[key], str):
+                                mem[key] = json.loads(mem[key])
+                        processed_mem.append(MemoryResponse(**mem))
+                    current_resp.memories = processed_mem
+                
+                # 将响应转换为JSON字符串并发送
+                response_data = current_resp.dict()
+                response_json = json.dumps(response_data, ensure_ascii=False)
+                
+                # 发送SSE事件
+                yield f" {response_json}\n\n"
+                
+                # 直接打印详细日志（关键修改：在发送响应的同时直接打印日志）
+                print("\n" + "="*80)
+                print(f"🔄 {flow_resp['type'].upper()}响应发送 | 角色ID: {request.character_id}")
+                print(f"📌 用户输入: {request.message}")
+                print(f"💬 响应内容: {flow_resp['content'][:150]}{'...' if len(flow_resp['content']) > 150 else ''}")
+                print(f"⏱️  耗时: {flow_resp.get('timestamp', 0):.2f}秒")
+                if current_resp.memories:
+                    print(f"🧠 关联记忆数: {len(current_resp.memories)}")
+                    for j, mem in enumerate(current_resp.memories):
+                        print(f"     📝 记忆 {j+1}: {mem.title} (相关性: {mem.relevance:.3f})")
+                print("="*80 + "\n")
         
-        # 打印详细日志
-        print("\n" + "="*80)
-        print("✅ 对话响应完成 | 角色ID:", request.character_id)
-        print(f"📌 用户输入: {request.message}")
-        print(f"⏱️  总耗时: {time.time() - start_time:.2f}秒")
-        print("-" * 80)
+            # 打印对话完成日志
+            total_time = time.time() - start_time
+            print("\n" + "="*80)
+            print(f"✅ 对话响应完成 | 角色ID: {request.character_id}")
+            print(f"📌 用户输入: {request.message}")
+            print(f"⏱️  总耗时: {total_time:.2f}秒")
+            print(f"📊 发送响应数: {response_count}")
+            print("="*80 + "\n")
         
-        for i, resp in enumerate(chat_responses):
-            print(f"💬 响应 {i+1} [类型: {resp.type}]")
-            print(f"   内容: {resp.message[:150]}{'...' if len(resp.message) > 150 else ''}")
-            print(f"   耗时: {getattr(resp, 'timestamp', 0):.2f}秒")
-            if resp.memories:
-                print(f"   关联记忆数: {len(resp.memories)}")
-                for j, mem in enumerate(resp.memories):
-                    print(f"     📝 记忆 {j+1}: {mem.title} (相关性: {mem.relevance:.3f})")
-            print()
-        
-        print("="*80 + "\n")
-
-        return chat_responses
+        except Exception as e:
+            error_detail = f"对话生成失败: {str(e)}\n{traceback.format_exc()}"
+            print(error_detail)
+            # 发送错误事件
+            error_data = {"error": str(e)}
+            error_json = json.dumps(error_data, ensure_ascii=False)
+            yield f" {error_json}\n\n"
     
-    except Exception as e:
-        error_detail = f"对话生成失败: {str(e)}\n{traceback.format_exc()}"
-        print(error_detail)
-        raise HTTPException(status_code=500, detail=f"对话生成失败: {str(e)}")
+    # 返回StreamingResponse，Content-Type为text/event-stream
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/v1/chat/{character_id}/history")
 async def get_chat_history(character_id: str):
@@ -415,10 +437,11 @@ if __name__ == "__main__":
     
     # 从环境变量获取端口，默认8000
     port = int(os.environ.get("PORT", 8000))
-    print(f"=== 启动角色化大语言模型知识库管理系统（V2.0） ===")
+    print(f"=== 启动角色化大语言模型知识库管理系统（V2.2.2，支持实时响应流+直接日志输出） ===")
     print(f"  端口: {port}")
     print(f"  记忆存储路径: ./chroma_db_full")
     print(f"  支持响应类型: direct/immediate/supplementary/no_memory")
+    print(f"  支持特性: 实时响应流(SSE), 直接日志输出")
     
     # 启动UVicorn服务器（reload=True仅用于开发环境）
     uvicorn.run(
