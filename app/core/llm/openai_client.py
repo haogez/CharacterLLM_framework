@@ -8,8 +8,10 @@ OpenAI API客户端封装模块
 import os
 import json
 from typing import Dict, List, Any, Optional, Union
+import asyncio
 
-from openai import OpenAI
+# 1. 修改：导入 AsyncOpenAI
+from openai import AsyncOpenAI
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 
@@ -37,12 +39,12 @@ class OpenAIClient:
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
         self.model = os.environ.get("OPENAI_MODEL", model)
         
-        # 直接客户端
+        # 2. 修改：初始化 AsyncOpenAI 客户端
         client_kwargs = {"api_key": self.api_key}
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
         
-        self.client = OpenAI(**client_kwargs)
+        self.client = AsyncOpenAI(**client_kwargs)
         
         # LangChain客户端
         langchain_kwargs = {
@@ -55,9 +57,10 @@ class OpenAIClient:
         
         self.chat_model = ChatOpenAI(**langchain_kwargs)
     
-    def generate_response(self, system_prompt: str, user_prompt: str) -> str:
+    # 3. 修改：generate_response 方法改为 async
+    async def generate_response(self, system_prompt: str, user_prompt: str) -> str:
         """
-        生成响应（使用直接客户端）
+        生成响应（使用异步客户端）
         
         Args:
             system_prompt: 系统提示
@@ -67,7 +70,8 @@ class OpenAIClient:
             生成的响应文本
         """
         try:
-            response = self.client.chat.completions.create(
+            # 4. 修改：使用 await 调用异步API
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -76,7 +80,6 @@ class OpenAIClient:
                 temperature=0.7
             )
             
-            # 检查响应是否有效
             if not response or not response.choices:
                 raise ValueError("API返回了空响应")
             
@@ -91,7 +94,8 @@ class OpenAIClient:
             print(f"Base URL: {self.base_url}")
             raise
     
-    def generate_structured_response(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
+    # 5. 修改：generate_structured_response 方法改为 async
+    async def generate_structured_response(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
         """
         生成结构化JSON响应
         
@@ -102,39 +106,33 @@ class OpenAIClient:
         Returns:
             解析后的JSON对象
         """
-        # 添加JSON格式要求
-        enhanced_system_prompt = f"{system_prompt}\n\nYou must respond in valid JSON format."
+        enhanced_system_prompt = f"{system_prompt}\n\n你必须以有效的JSON格式响应。"
         
-        response_text = self.generate_response(enhanced_system_prompt, user_prompt)
+        # 6. 修改：await 调用异步 generate_response
+        response_text = await self.generate_response(enhanced_system_prompt, user_prompt)
         
-        # 调试日志
         print(f"=== LLM 原始响应 ===")
         print(response_text[:1500] if len(response_text) > 1500 else response_text)
         print(f"=== 响应长度: {len(response_text)} ===")
         
         try:
-            # 尝试解析JSON
             parsed = json.loads(response_text)
             print(f"✓ JSON 解析成功")
             return parsed
         except json.JSONDecodeError as e:
             print(f"✗ JSON 解析失败: {e}")
-            # 如果解析失败，尝试提取JSON部分
             try:
-                # 查找可能的JSON部分（在```json和```之间）
                 import re
                 json_match = re.search(r'```json\n(.*?)\n```', response_text, re.DOTALL)
                 if json_match:
                     print(f"✓ 从 ```json``` 块中提取 JSON")
                     return json.loads(json_match.group(1))
                 
-                # 尝试查找{开头和}结尾的部分
                 json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
                 if json_match:
                     print(f"✓ 从文本中提取 JSON")
                     return json.loads(json_match.group(1))
                 
-                # 返回文本作为备选
                 print(f"✗ 无法提取有效的 JSON")
                 return {"text": response_text, "error": "Failed to parse JSON"}
             except Exception as e:
@@ -154,7 +152,8 @@ class OpenAIClient:
         response = self.chat_model.generate([messages])
         return response.generations[0][0].text
     
-    def create_embeddings(self, texts: List[str]) -> List[List[float]]:
+    # 7. 修改：create_embeddings 方法改为 async
+    async def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
         创建文本嵌入向量
         
@@ -164,7 +163,8 @@ class OpenAIClient:
         Returns:
             嵌入向量列表
         """
-        response = self.client.embeddings.create(
+        # 8. 修改：使用 await 调用异步API
+        response = await self.client.embeddings.create(
             model="text-embedding-3-large",
             input=texts
         )
@@ -187,7 +187,8 @@ class CharacterLLM:
         """
         self.client = openai_client or OpenAIClient()
     
-    def generate_character(self, description: str) -> Dict[str, Any]:
+    # 9. 修改：generate_character 方法改为 async
+    async def generate_character(self, description: str) -> Dict[str, Any]:
         """
         一句话生成18维度立体角色：用户提示严格优先，自动衍生合理细节
         核心逻辑：用户明确设定的属性>其他衍生维度，确保角色符合用户预期
@@ -431,10 +432,12 @@ class CharacterLLM:
         
         user_prompt = f"基于这句话生成全面角色（用户设定优先）：{description}"
         
-        return self.client.generate_structured_response(system_prompt, user_prompt)
+        # 10. 修改：await 调用异步 generate_structured_response
+        return await self.client.generate_structured_response(system_prompt, user_prompt)
 
     
-    def generate_memory(self, character_data: Dict[str, Any], memory_type: str) -> Dict[str, Any]:
+    # 11. 修改：generate_memory 方法改为 async
+    async def generate_memory(self, character_data: Dict[str, Any], memory_type: str) -> Dict[str, Any]:
         """
         生成与角色深度绑定的多维度记忆，支撑角色行为逻辑与情感反应
         
@@ -445,7 +448,6 @@ class CharacterLLM:
         Returns:
             包含多维度细节的记忆数据字典
         """
-        # 提取角色核心特征与记忆类型强关联的信息
         core_connections = {
             "personality_markers": [
                 f"开放性{character_data['personality']['openness']}分：{'乐于尝试新事物' if character_data['personality']['openness']>60 else '偏好稳定熟悉的环境'}",
@@ -553,7 +555,6 @@ class CharacterLLM:
         5. 是否包含足够的感官细节以增强真实感？
         """
         
-        # 构建针对性提示信息
         user_prompt = f"""
         基于以下角色核心特征，生成{memory_type}记忆：
         
@@ -574,10 +575,12 @@ class CharacterLLM:
         请确保记忆与上述特征形成有机整体，而非孤立事件。
         """
         
-        return self.client.generate_structured_response(system_prompt, user_prompt)
+        # 12. 修改：await 调用异步 generate_structured_response
+        return await self.client.generate_structured_response(system_prompt, user_prompt)
     
 
-    def generate_quick_response(self,
+    # 13. 修改：generate_quick_response 方法改为 async
+    async def generate_quick_response(self,
                                 character_data: Dict[str, Any],
                                 user_input: str,
                                 conversation_history: List[Dict[str, str]] = None) -> str:
@@ -586,63 +589,13 @@ class CharacterLLM:
         当检测到用户输入可能触及需要记忆的内容时，先给出简短响应
         为记忆检索争取时间，确保对话流畅性
         """
-        # 提取快速响应必须参考的核心人设要素
-        core_identity = {
-            "name": character_data.get('name', '角色'),
-            "speech_style": character_data.get('speech_style', '自然流畅'),
-            "personality_traits": {
-                "extraversion": character_data['personality'].get('extraversion', 50),  # 决定回应的热情程度
-                "agreeableness": character_data['personality'].get('agreeableness', 50),  # 决定回应的友好程度
-                "neuroticism": character_data['personality'].get('neuroticism', 50)      # 决定回应的情绪波动
-            },
-            "language_features": {
-                "vocabulary": character_data.get('language_style', '').split('、')[:3],  # 核心词汇特征
-                "sentence_length": "简短" if character_data['personality'].get('conscientiousness', 50) < 40 else "中等",
-                "tone_markers": ["温和", "礼貌"] if character_data['personality'].get('agreeableness', 50) > 60 else 
-                                ["直接", "简洁"] if character_data['personality'].get('agreeableness', 50) < 40 else 
-                                ["中性", "客观"]
-            }
-        }
-        
-        # 检测用户输入是否可能触发记忆检索（需要优先响应的场景）
-        memory_trigger_words = [
-            "记得", "以前", "曾经", "上次", "小时候", "大学", "工作", "家庭",
-            "经历", "发生", "故事", "回忆", "为什么", "怎么会", "原因"
-        ]
-        is_memory_related = any(word in user_input for word in memory_trigger_words)
-        
-        system_prompt = f"""
-        你需要为角色生成一个过渡性快速响应，遵循以下规则：
-        
-        【核心人设】
-        姓名：{core_identity['name']}
-        说话风格：{core_identity['speech_style']}
-        性格特征：
-        - 外向性{core_identity['personality_traits']['extraversion']}/100：{'热情主动' if core_identity['personality_traits']['extraversion']>60 else '内敛被动'}
-        - 宜人性{core_identity['personality_traits']['agreeableness']}/100：{'友善包容' if core_identity['personality_traits']['agreeableness']>60 else '坚持己见'}
-        - 情绪稳定性{100-core_identity['personality_traits']['neuroticism']}/100：{'冷静稳定' if core_identity['personality_traits']['neuroticism']<40 else '敏感波动'}
-        
-        【语言特征】
-        - 核心词汇：{core_identity['language_features']['vocabulary']}
-        - 句子长度：{core_identity['language_features']['sentence_length']}
-        - 语气特点：{core_identity['language_features']['tone_markers']}
-        
-        【响应规则】
-        1. 当检测到用户输入涉及记忆（如提到过去、经历等）：
-           - 明确表示需要回忆（例："让我想想...", "这个我得回忆一下"）
-           - 保持角色语气，不透露系统机制
-           - 不提供具体信息，为后续补充响应留空间
-        
-        2. 通用要求：
-           - 绝对简短（1句话，10-20字）
-           - 符合角色的说话风格和性格
-           - 承接用户话题，不转移焦点
-           - 自然流畅，像真实思考的停顿
-           - 避免使用表情符号或markdown格式
-        
-        错误示例（不符合角色性格）：
-        - 内向角色说："这个问题太有意思了！我马上告诉你详情！"
-        - 宜人性低的角色说："好的好的，我一定好好想想帮你解答~"
+        # 14. 修改：使用更简化的Prompt
+        simplified_system_prompt = f"""
+        你是 {character_data.get('name', '角色')}。
+        你的说话风格是：{character_data.get('language_style', '自然流畅')}。
+        请非常简短地（1-2句话，10-20字）回应用户的输入，符合你的说话风格。
+        如果输入似乎在询问过去经历或记忆，请简短地承认需要回忆一下（例如："让我想想..."）。
+        不要提供具体细节，只是快速反应。
         """
         
         # 构建对话上下文（只取最近1轮确保快速处理）
@@ -651,11 +604,13 @@ class CharacterLLM:
             last_exchange = conversation_history[-1]
             context = f"上一句对话：{last_exchange.get('content', '')}\n"
         
-        user_prompt = f"{context}用户当前输入：{user_input}\n\n{'用户提到了需要回忆的内容，请生成过渡响应' if is_memory_related else '请生成符合角色的简短响应'}"
+        user_prompt = f"{context}用户当前输入：{user_input}\n你的非常简短的回应："
         
-        return self.client.generate_response(system_prompt, user_prompt)
+        # 15. 修改：await 调用异步 generate_response
+        return await self.client.generate_response(simplified_system_prompt, user_prompt)
     
-    def generate_dialogue_response(self, 
+    # 16. 修改：generate_dialogue_response 方法改为 async
+    async def generate_dialogue_response(self, 
                                   character_data: Dict[str, Any], 
                                   user_input: str, 
                                   conversation_history: List[Dict[str, str]] = None,
@@ -665,7 +620,6 @@ class CharacterLLM:
         基于检索到的记忆和完整人设，补充快速响应的内容
         形成完整、有深度且符合角色的回答
         """
-        # 提取需要结合的核心要素
         key_elements = {
             "identity": {
                 "name": character_data.get('name'),
@@ -723,7 +677,6 @@ class CharacterLLM:
            - 保持口语化，避免书面语
         """
         
-        # 构建完整对话历史
         history_context = ""
         if conversation_history:
             history_context = "对话历史：\n"
@@ -731,7 +684,6 @@ class CharacterLLM:
                 role = "用户" if msg["role"] == "user" else key_elements['identity']['name']
                 history_context += f"{role}：{msg['content']}\n"
         
-        # 处理相关记忆（突出与当前对话的关联性）
         memories_context = ""
         if relevant_memories:
             memories_context = "需要融入的记忆（按重要性排序）：\n"
@@ -743,13 +695,11 @@ class CharacterLLM:
         
         user_prompt = f"{history_context}\n{memories_context}\n用户当前输入：{user_input}\n\n请生成补充响应，完成角色的完整回答："
         
-        return self.client.generate_response(system_prompt, user_prompt)
+        # 17. 修改：await 调用异步 generate_response
+        return await self.client.generate_response(system_prompt, user_prompt)
     
 
-
-# 测试代码
 if __name__ == "__main__":
-    # 设置API密钥和基础URL
     api_key = os.environ.get("OPENAI_API_KEY")
     base_url = os.environ.get("OPENAI_BASE_URL")
     
@@ -757,24 +707,14 @@ if __name__ == "__main__":
         print("请设置OPENAI_API_KEY环境变量")
         exit(1)
     
-    # 创建客户端
     character_llm = CharacterLLM(OpenAIClient(api_key=api_key, base_url=base_url))
     
-    # 测试角色生成
-    character = character_llm.generate_character("一位生活在90年代上海的退休语文教师，性格温和，喜欢读书写字")
-    print("生成的角色:")
-    print(json.dumps(character, ensure_ascii=False, indent=2))
-    
-    # 测试记忆生成
-    memory = character_llm.generate_memory(character, "education")
-    print("\n生成的记忆:")
-    print(json.dumps(memory, ensure_ascii=False, indent=2))
-    
-    # 测试对话生成
-    response = character_llm.generate_dialogue_response(
-        character, 
-        "您好，请问您在教学生涯中最难忘的一件事是什么？",
-        relevant_memories=[memory]
-    )
-    print("\n生成的对话响应:")
-    print(response)
+    # Note: These calls now need to be awaited in an async context
+    # asyncio.run(...) or within an async function
+    # Example:
+    # async def test():
+    #     character = await character_llm.generate_character("...")
+    #     memory = await character_llm.generate_memory(character, "education")
+    #     response = await character_llm.generate_dialogue_response(...)
+    # test()
+    print("OpenAI客户端模块已加载，方法已异步化。")

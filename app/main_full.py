@@ -8,105 +8,93 @@ import os
 import time
 import json
 import uuid
-import traceback  # 提前导入，避免在except块中导入
+import traceback
+import asyncio # 1. 添加 asyncio 导入
 from typing import Dict, List, Any, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse  # 用于SSE
-from pydantic import BaseModel  # 用于定义数据模型
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.core.character.generator import CharacterGenerator
 from app.core.llm.openai_client import CharacterLLM
 from app.core.memory.vector_store import ChromaMemoryStore
-from app.core.response.flow import ResponseFlow  # 对接优化后的flow
+from app.core.response.flow import ResponseFlow
 
-# 创建FastAPI应用
 app = FastAPI(
     title="角色化大语言模型知识库管理系统",
     description="支持完整记忆格式+多响应类型的AI对话框架",
-    version="2.2.2"  # 版本升级，标记支持实时响应流+直接日志输出
+    version="2.2.2"
 )
 
-# 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境需限制为特定域名
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 创建全局组件（确保MemoryStore支持完整记忆格式读取）
 character_llm = CharacterLLM()
 character_generator = CharacterGenerator(character_llm)
-# 初始化ChromaMemoryStore，后续需在其内部实现return_full_fields参数
 memory_store = ChromaMemoryStore(persist_directory="./chroma_db_full")
-response_flow = ResponseFlow(character_llm, memory_store)  # 对接优化后的ResponseFlow
+response_flow = ResponseFlow(character_llm, memory_store)
 
 # ------------------------------------------------------------------------------
 # 核心修改1：定义适配「完整记忆格式」的数据模型（嵌套Pydantic模型）
 # ------------------------------------------------------------------------------
 class TimeDetail(BaseModel):
-    """记忆中time字段的详细结构（对应完整记忆格式）"""
-    age: int  # 角色当时年龄（整数）
-    period: str  # 人生阶段（如"工作第3年"）
-    specific: str  # 具体时间特征（如"周五加班到凌晨"）
+    age: int
+    period: str
+    specific: str
 
 class EmotionDetail(BaseModel):
-    """记忆中emotion字段的详细结构"""
-    immediate: List[str]  # 即时情绪（2-3个）
-    reflected: List[str]  # 事后反思情绪（2-3个）
-    residual: str  # 残留至今的情感
-    intensity: int  # 情感强度（1-10）
+    immediate: List[str]
+    reflected: List[str]
+    residual: str
+    intensity: int
 
 class ImportanceDetail(BaseModel):
-    """记忆中importance字段的详细结构"""
-    score: int  # 重要性评分（1-10）
-    reason: str  # 重要性原因
-    frequency: str  # 回忆频率（如"每月至少想起1次"）
+    score: int
+    reason: str
+    frequency: str
 
 class BehaviorImpactDetail(BaseModel):
-    """记忆中behavior_impact字段的详细结构"""
-    habit_formed: str  # 形成的习惯
-    attitude_change: str  # 态度转变
-    response_pattern: str  # 应对模式
+    habit_formed: str
+    attitude_change: str
+    response_pattern: str
 
 class TriggerSystemDetail(BaseModel):
-    """记忆中trigger_system字段的详细结构"""
-    sensory: List[str]  # 感官触发点（如"闻到速溶咖啡焦味"）
-    contextual: List[str]  # 情境触发点（如"项目上线前测试"）
-    emotional: List[str]  # 情绪触发点（如"感到焦虑时"）
+    sensory: List[str]
+    contextual: List[str]
+    emotional: List[str]
 
 class MemoryDistortionDetail(BaseModel):
-    """记忆中memory_distortion字段的详细结构"""
-    exaggerated: str  # 被夸大的部分
-    downplayed: str  # 被淡化的部分
-    reason: str  # 扭曲原因（符合角色性格）
+    exaggerated: str
+    downplayed: str
+    reason: str
 
 class MemoryResponse(BaseModel):
-    """完整记忆格式的响应模型（增加容错）"""
-    id: str  # 必选（记忆ID不会缺失）
-    type: Optional[str] = "general"  # 可选：默认值为 general
-    title: str  # 必选（生成记忆时会包含标题）
-    content: str  # 必选（记忆核心内容）
-    time: Optional[TimeDetail] = TimeDetail(age=0, period="未知", specific="未知")  # 可选：默认空结构
-    emotion: Optional[EmotionDetail] = EmotionDetail(immediate=[], reflected=[], residual="", intensity=0)  # 可选
-    importance: Optional[ImportanceDetail] = ImportanceDetail(score=5, reason="", frequency="")  # 可选
-    behavior_impact: Optional[BehaviorImpactDetail] = BehaviorImpactDetail(habit_formed="", attitude_change="", response_pattern="")  # 可选
-    trigger_system: Optional[TriggerSystemDetail] = TriggerSystemDetail(sensory=[], contextual=[], emotional=[])  # 可选
-    memory_distortion: Optional[MemoryDistortionDetail] = MemoryDistortionDetail(exaggerated="", downplayed="", reason="")  # 可选
-    relevance: Optional[float] = None  # 可选
+    id: str
+    type: Optional[str] = "general"
+    title: str
+    content: str
+    time: Optional[TimeDetail] = TimeDetail(age=0, period="未知", specific="未知")
+    emotion: Optional[EmotionDetail] = EmotionDetail(immediate=[], reflected=[], residual="", intensity=0)
+    importance: Optional[ImportanceDetail] = ImportanceDetail(score=5, reason="", frequency="")
+    behavior_impact: Optional[BehaviorImpactDetail] = BehaviorImpactDetail(habit_formed="", attitude_change="", response_pattern="")
+    trigger_system: Optional[TriggerSystemDetail] = TriggerSystemDetail(sensory=[], contextual=[], emotional=[])
+    memory_distortion: Optional[MemoryDistortionDetail] = MemoryDistortionDetail(exaggerated="", downplayed="", reason="")
+    relevance: Optional[float] = None
 
 # ------------------------------------------------------------------------------
 # 核心修改2：定义适配「多响应类型」的对话模型
 # ------------------------------------------------------------------------------
 class CharacterGenerationRequest(BaseModel):
-    """角色生成请求（无修改，保持原结构）"""
     description: str
 
 class CharacterResponse(BaseModel):
-    """角色详情响应（保持完整人设字段）"""
     id: str
     name: str
     age: int
@@ -130,19 +118,16 @@ class CharacterResponse(BaseModel):
     background: str
 
 class ChatRequest(BaseModel):
-    """对话请求（无修改，保持原结构）"""
     character_id: str
     message: str
-    conversation_history: Optional[List[Dict[str, str]]] = None  # 历史对话（角色/用户）
+    conversation_history: Optional[List[Dict[str, str]]] = None
 
 class ChatResponse(BaseModel):
-    """对话响应（支持4种响应类型）"""
-    message: str  # 响应内容
-    type: str  # 响应类型：direct/immediate/supplementary/no_memory
-    memories: Optional[List[MemoryResponse]] = None  # 关联的完整记忆（可选）
-    timestamp: Optional[float] = None  # 响应时间戳（可选）
+    message: str
+    type: str
+    memories: Optional[List[MemoryResponse]] = None
+    timestamp: Optional[float] = None
 
-# 内存存储角色数据（生产环境需替换为数据库）
 characters: Dict[str, Dict[str, Any]] = {}
 
 # ------------------------------------------------------------------------------
@@ -170,33 +155,30 @@ async def system_status():
         }
     }
         
+# 2. 修改：generate_character 端点改为 async
 @app.post("/api/v1/characters/generate", response_model=CharacterResponse)
 async def generate_character(request: CharacterGenerationRequest, background_tasks: BackgroundTasks):
     """生成角色"""
     start_time = time.time()
     try:
-        # 生成完整人设
-        character_data = character_generator.generate_character(request.description)
+        # 3. 修改：await 调用异步生成方法
+        character_data = await character_generator.generate_character(request.description)
         if "error" in character_data:
             raise ValueError(f"LLM生成角色失败: {character_data['error']}")
         
-        # 生成角色ID并存储
         character_id = str(uuid.uuid4())
         characters[character_id] = character_data
         
-        # 计算角色生成耗时
         role_gen_time = time.time() - start_time
         print(f"=== 角色 [{character_id}: {character_data['name']}] 生成耗时: {role_gen_time:.2f} 秒 ===")
         
-        # 后台生成「完整格式记忆」
         background_tasks.add_task(
             generate_and_store_memories,
             character_id,
             character_data,
-            start_time  # 传递角色生成开始时间，计算总耗时
+            start_time
         )
         
-        # 返回包含生成时间和进度的信息
         return {
             "id": character_id,
             **character_data,
@@ -213,12 +195,10 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
 
 @app.get("/api/v1/characters", response_model=List[CharacterResponse])
 async def list_characters():
-    """列出所有角色"""
     return [{"id": cid, **cdata} for cid, cdata in characters.items()]
 
 @app.get("/api/v1/characters/{character_id}", response_model=CharacterResponse)
 async def get_character(character_id: str):
-    """获取单个角色详情"""
     if character_id not in characters:
         raise HTTPException(status_code=404, detail="角色不存在")
     return {"id": character_id, **characters[character_id]}
@@ -228,27 +208,23 @@ async def get_character(character_id: str):
 # ------------------------------------------------------------------------------
 @app.get("/api/v1/characters/{character_id}/memories", response_model=List[MemoryResponse])
 async def get_character_memories(character_id: str):
-    """查询角色的所有完整记忆（反序列化存储时的JSON字段）"""
     if character_id not in characters:
         raise HTTPException(status_code=404, detail="角色不存在")
     
-    # 调用MemoryStore查询完整记忆（需确保返回所有嵌套字段的JSON字符串）
+    # Note: This uses the sync method. If performance is critical, you might want to add an async version here too.
     raw_memories = memory_store.query_memories(
         character_id=character_id,
-        query_text="",  # 空查询返回所有记忆
+        query_text="",
         n_results=100,
-        return_full_fields=True  # 关键参数：获取完整记忆格式（非简化版）
+        return_full_fields=True
     )
     
-    # 反序列化存储时的JSON字段（time/emotion等嵌套字段）
     processed_memories = []
     for mem in raw_memories:
         try:
-            # 对所有嵌套字典字段进行JSON反序列化（存储时转了字符串）
             for key in ["time", "emotion", "importance", "behavior_impact", "trigger_system", "memory_distortion"]:
                 if key in mem and isinstance(mem[key], str):
-                    mem[key] = json.loads(mem[key])  # 转回字典
-            # 转换为MemoryResponse模型（自动校验字段完整性）
+                    mem[key] = json.loads(mem[key])
             processed_memories.append(MemoryResponse(**mem))
         except Exception as e:
             print(f"跳过格式异常的记忆: {str(e)} | 记忆ID: {mem.get('id', '未知')}")
@@ -258,15 +234,12 @@ async def get_character_memories(character_id: str):
 
 @app.post("/api/v1/characters/{character_id}/memories/regenerate")
 async def regenerate_character_memories(character_id: str, background_tasks: BackgroundTasks):
-    """重新生成角色记忆（适配完整记忆格式）"""
     if character_id not in characters:
         raise HTTPException(status_code=404, detail="角色不存在")
     
-    # 删除现有完整记忆
     memory_store.delete_all_memories(character_id)
     print(f"=== 已删除角色 [{character_id}] 的所有旧记忆 ===")
     
-    # 后台重新生成完整记忆（不传递role_start_time，使用默认值None）
     background_tasks.add_task(
         generate_and_store_memories,
         character_id,
@@ -277,6 +250,7 @@ async def regenerate_character_memories(character_id: str, background_tasks: Bac
 
 # ------------------------------------------------------------------------------
 # 核心修改4：对话接口（使用SSE实现实时响应流 + 直接日志输出）
+# 4. 修改：chat_with_character 端点改为 async
 # ------------------------------------------------------------------------------
 @app.post("/api/v1/chat", response_class=StreamingResponse)
 async def chat_with_character(request: ChatRequest):
@@ -285,10 +259,9 @@ async def chat_with_character(request: ChatRequest):
         raise HTTPException(status_code=404, detail="角色不存在")
     character_data = characters[request.character_id]
     
+    # 5. 修改：event_generator 函数改为 async
     async def event_generator():
-        """生成SSE事件的异步生成器"""
         try:
-            # 记录开始时间
             start_time = time.time()
             
             print("\n" + "="*80)
@@ -296,7 +269,7 @@ async def chat_with_character(request: ChatRequest):
             print(f"📌 用户输入: {request.message}")
             print("="*80)
             
-            # 调用flow处理对话（这是一个异步生成器）
+            # 6. 修改：使用 async for 遍历异步生成器
             response_count = 0
             async for flow_resp in response_flow.process(
                 character_id=request.character_id,
@@ -305,7 +278,6 @@ async def chat_with_character(request: ChatRequest):
                 conversation_history=request.conversation_history
             ):
                 response_count += 1
-                # 构建当前响应
                 current_resp = ChatResponse(
                     message=flow_resp["content"],
                     type=flow_resp["type"],
@@ -313,7 +285,6 @@ async def chat_with_character(request: ChatRequest):
                     timestamp=flow_resp.get("timestamp", None)
                 )
                 
-                # 处理记忆数据（反序列化）
                 if "memories" in flow_resp and flow_resp["memories"]:
                     processed_mem = []
                     for mem in flow_resp["memories"]:
@@ -323,14 +294,11 @@ async def chat_with_character(request: ChatRequest):
                         processed_mem.append(MemoryResponse(**mem))
                     current_resp.memories = processed_mem
                 
-                # 将响应转换为JSON字符串并发送
                 response_data = current_resp.dict()
                 response_json = json.dumps(response_data, ensure_ascii=False)
                 
-                # 发送SSE事件
                 yield f" {response_json}\n\n"
                 
-                # 直接打印详细日志（关键修改：在发送响应的同时直接打印日志）
                 print("\n" + "="*80)
                 print(f"🔄 {flow_resp['type'].upper()}响应发送 | 角色ID: {request.character_id}")
                 print(f"📌 用户输入: {request.message}")
@@ -342,7 +310,6 @@ async def chat_with_character(request: ChatRequest):
                         print(f"     📝 记忆 {j+1}: {mem.title} (相关性: {mem.relevance:.3f})")
                 print("="*80 + "\n")
         
-            # 打印对话完成日志
             total_time = time.time() - start_time
             print("\n" + "="*80)
             print(f"✅ 对话响应完成 | 角色ID: {request.character_id}")
@@ -354,26 +321,24 @@ async def chat_with_character(request: ChatRequest):
         except Exception as e:
             error_detail = f"对话生成失败: {str(e)}\n{traceback.format_exc()}"
             print(error_detail)
-            # 发送错误事件
             error_data = {"error": str(e)}
             error_json = json.dumps(error_data, ensure_ascii=False)
             yield f" {error_json}\n\n"
     
-    # 返回StreamingResponse，Content-Type为text/event-stream
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/v1/chat/{character_id}/history")
 async def get_chat_history(character_id: str):
-    """对话历史接口（暂未实现，返回空列表）"""
     return {"message": "对话历史功能暂未实现", "character_id": character_id, "history": []}
 
 # ------------------------------------------------------------------------------
 # 核心修改5：后台任务（生成+存储完整格式记忆，处理嵌套JSON序列化）
+# 7. 修改：generate_and_store_memories 任务改为 async
 # ------------------------------------------------------------------------------
 async def generate_and_store_memories(
     character_id: str, 
     character_data: Dict[str, Any], 
-    role_start_time: float = None  # 允许为None（重新生成时无此参数）
+    role_start_time: float = None
 ):
     """
     生成并存储「完整格式记忆」
@@ -383,13 +348,12 @@ async def generate_and_store_memories(
         character_name = character_data.get("name", "未知角色")
         print(f"\n=== 开始生成角色 [{character_id}: {character_name}] 的完整记忆 ===")
         
-        # 1. 生成完整格式记忆
-        raw_memories = character_generator.generate_memories(character_data, count=5)
+        # 8. 修改：await 调用异步生成方法
+        raw_memories = await character_generator.generate_memories(character_data, count=5)
         if not raw_memories:
             print(f"警告：角色 [{character_name}] 未生成任何记忆")
             return
         
-        # 2. 处理完整记忆：嵌套字典转JSON字符串
         processed_memories = []
         for mem in raw_memories:
             processed_mem = {}
@@ -402,11 +366,10 @@ async def generate_and_store_memories(
                     processed_mem["id"] = str(uuid.uuid4())
             processed_memories.append(processed_mem)
         
-        # 3. 存储完整记忆到ChromaDB
-        memory_ids = memory_store.add_memories(character_id, processed_memories)
+        # 9. 修改：await 调用异步存储方法
+        memory_ids = await memory_store.add_memories_async(character_id, processed_memories)
         memory_gen_time = time.time() - memory_start
         
-        # 打印详细日志
         print(f"=== 角色 [{character_name}] 成功存储 {len(memory_ids)} 条完整记忆 ===")
         print(f"  记忆ID列表: {memory_ids}")
         print(f"  记忆生成+存储耗时: {memory_gen_time:.2f} 秒")
@@ -415,7 +378,6 @@ async def generate_and_store_memories(
             total_time = time.time() - role_start_time
             print(f"  角色生成→记忆存储完整流程耗时: {total_time:.2f} 秒")
             
-        # 更新角色数据，添加记忆生成信息
         if character_id in characters:
             characters[character_id]["generation_info"] = {
                 "start_time": role_start_time,
@@ -435,7 +397,6 @@ async def generate_and_store_memories(
 if __name__ == "__main__":
     import uvicorn
     
-    # 从环境变量获取端口，默认8000
     port = int(os.environ.get("PORT", 8000))
     print(f"=== 启动角色化大语言模型知识库管理系统（V2.2.2，支持实时响应流+直接日志输出） ===")
     print(f"  端口: {port}")
@@ -443,7 +404,6 @@ if __name__ == "__main__":
     print(f"  支持响应类型: direct/immediate/supplementary/no_memory")
     print(f"  支持特性: 实时响应流(SSE), 直接日志输出")
     
-    # 启动UVicorn服务器（reload=True仅用于开发环境）
     uvicorn.run(
         "app.main_full:app",
         host="0.0.0.0",

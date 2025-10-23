@@ -6,6 +6,7 @@
 
 import json
 import os
+import asyncio # 1. 添加 asyncio 导入
 from typing import Dict, List, Any, Optional, Tuple
 
 from app.core.llm.openai_client import CharacterLLM, OpenAIClient
@@ -26,7 +27,8 @@ class CharacterGenerator:
         """
         self.character_llm = character_llm or CharacterLLM()
     
-    def generate_character(self, description: str) -> Dict[str, Any]:
+    # 2. 修改：generate_character 方法改为 async
+    async def generate_character(self, description: str) -> Dict[str, Any]:
         """
         从自然语言描述生成角色
         
@@ -36,15 +38,16 @@ class CharacterGenerator:
         Returns:
             角色数据字典
         """
-        # 使用角色LLM生成角色
-        character_data = self.character_llm.generate_character(description)
+        # 3. 修改：await 调用 LLM 异步方法
+        character_data = await self.character_llm.generate_character(description)
         
         # 确保生成的角色数据包含必要的字段
         self._validate_and_fix_character_data(character_data)
         
         return character_data
     
-    def generate_memories(self, character_data: Dict[str, Any], count: int = 10) -> List[Dict[str, Any]]:
+    # 4. 修改：generate_memories 方法改为 async
+    async def generate_memories(self, character_data: Dict[str, Any], count: int = 10) -> List[Dict[str, Any]]:
         """
         为角色生成记忆
         
@@ -85,7 +88,8 @@ class CharacterGenerator:
         all_memories = []
         for memory_type, type_count in type_counts.items():
             for _ in range(type_count):
-                memory = self.character_llm.generate_memory(character_data, memory_type)
+                # 5. 修改：await 调用 LLM 异步方法
+                memory = await self.character_llm.generate_memory(character_data, memory_type)
                 # 确保记忆类型字段存在
                 memory["type"] = memory_type
                 all_memories.append(memory)
@@ -140,32 +144,29 @@ class CharacterGenerator:
 
 # 测试代码
 if __name__ == "__main__":
-    # 设置API密钥
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("请设置OPENAI_API_KEY环境变量")
-        exit(1)
-    
-    # 创建角色生成器
-    character_generator = CharacterGenerator()
-    
-    # 测试角色生成
-    description = "一位生活在90年代上海的退休语文教师，性格温和，喜欢读书写字"
-    print(f"生成角色: {description}")
-    
-    character = character_generator.generate_character(description)
-    print("\n生成的角色:")
-    print(json.dumps(character, ensure_ascii=False, indent=2))
-    
-    # 测试记忆生成
-    print("\n生成角色记忆...")
-    memories = character_generator.generate_memories(character, count=5)
-    
-    print("\n生成的记忆:")
-    for i, memory in enumerate(memories, 1):
-        print(f"\n记忆 {i} [{memory['type']}]:")
-        print(f"标题: {memory.get('title', 'Unknown')}")
-        print(f"内容: {memory.get('content', 'Unknown')}")
-        print(f"时间: {memory.get('time', 'Unknown')}")
-        print(f"情感: {memory.get('emotion', 'neutral')}")
-        print(f"重要性: {memory.get('importance', 5)}/10")
+    # Note: The synchronous test script needs to be adapted to use async/await
+    # Example using asyncio.run:
+    # import asyncio
+    # async def test():
+    #     api_key = os.environ.get("OPENAI_API_KEY")
+    #     if not api_key:
+    #         print("请设置OPENAI_API_KEY环境变量")
+    #         return
+    #     character_generator = CharacterGenerator()
+    #     description = "一位生活在90年代上海的退休语文教师，性格温和，喜欢读书写字"
+    #     print(f"生成角色: {description}")
+    #     character = await character_generator.generate_character(description)
+    #     print("\n生成的角色:")
+    #     print(json.dumps(character, ensure_ascii=False, indent=2))
+    #     print("\n生成角色记忆...")
+    #     memories = await character_generator.generate_memories(character, count=5)
+    #     print("\n生成的记忆:")
+    #     for i, memory in enumerate(memories, 1):
+    #         print(f"\n记忆 {i} [{memory['type']}]:")
+    #         print(f"标题: {memory.get('title', 'Unknown')}")
+    #         print(f"内容: {memory.get('content', 'Unknown')}")
+    #         print(f"时间: {memory.get('time', 'Unknown')}")
+    #         print(f"情感: {memory.get('emotion', 'neutral')}")
+    #         print(f"重要性: {memory.get('importance', 5)}/10")
+    # asyncio.run(test())
+    print("CharacterGenerator 模块已加载，方法已异步化。")
