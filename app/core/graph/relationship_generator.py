@@ -202,7 +202,7 @@ class RelationshipGenerator:
         Returns:
             List[Dict[str, Any]]: 生成的记忆列表
         """
-        print(f"--- 为 {relationship_type} 关系生成记忆 ---")
+        log_info(f"为 {relationship_type} 关系生成记忆") # 使用新的日志工具函数
 
         # 根据关系类型调整Prompt，引导LLM生成相关记忆
         context_desc = ""
@@ -259,7 +259,7 @@ class RelationshipGenerator:
         # 调用LLM生成结构化记忆
         result = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
         print(f"--- LLM 返回的原始结果类型: {type(result)} ---")
-        print(f"--- LLM 返回的原始结果内容: {result} ---")
+        print(f"--- LLM 返回的原始结果内容 (前200字符): {str(result)[:200]}{'...' if len(str(result)) > 200 else ''} ---") # 简化打印
 
         # --- 修改：处理 result 可能是列表或字典的情况 ---
         if isinstance(result, list):
@@ -273,7 +273,7 @@ class RelationshipGenerator:
         else:
             # LLM 返回了非预期格式，可能包含错误
             print(f"--- 警告：LLM 返回了非预期格式: {type(result)} ---")
-            print(f"--- 返回内容: {result} ---")
+            print(f"--- 返回内容 (前200字符): {str(result)[:200]}{'...' if len(str(result)) > 200 else ''} ---")
             # 如果 result 包含 'text' 和 'error'，说明解析失败
             if isinstance(result, dict) and 'error' in result:
                  print(f"--- LLM 解析错误: {result.get('error')} ---")
@@ -326,28 +326,6 @@ class RelationshipGenerator:
             # 确保为记忆添加ID
             processed_mem["id"] = str(uuid.uuid4())
             generated_memories.append(processed_mem)
-        # ---
-
-        # --- 新增：打印生成的记忆详情 ---
-        print(f"--- 为 {relationship_type} 关系生成了 {len(generated_memories)} 条记忆，详情如下： ---")
-        for idx, mem in enumerate(generated_memories):
-            print(f"  记忆 {idx+1}:")
-            print(f"    ID: {mem.get('id')}")
-            print(f"    类型: {relationship_type}") # 使用传入的 relationship_type
-            print(f"    标题: {mem.get('title', '无标题')}")
-            print(f"    内容: {mem.get('content', '无内容')[:200]}...") # 打印前200个字符，避免日志过长
-            print(f"    时间: {mem.get('time', {})}")
-            print(f"    情感: {mem.get('emotion', {})}")
-            print(f"    重要性: {mem.get('importance', {})}")
-            print(f"    行为影响: {mem.get('behavior_impact', {})}")
-            print(f"    触发系统: {mem.get('trigger_system', {})}")
-            print(f"    记忆扭曲: {mem.get('memory_distortion', {})}")
-            print(f"    相关性 (内部计算): {mem.get('relevance', 'N/A')}") # 如果有相关性分数的话
-            print(f"    来源关系 (内部计算): {mem.get('_source_relationship', 'N/A')}") # 如果有来源关系的话
-            print(f"    关联角色ID (内部计算): {mem.get('_related_character_id', 'N/A')}") # 如果有关联角色ID的话
-            print("-" * 20) # 分隔线
-        print(f"--- {relationship_type} 关系记忆生成详情打印完毕 ---")
-        # ---
-
-        print(f"--- 为 {relationship_type} 关系生成了 {len(generated_memories)} 条记忆 ---")
+        
+        log_success(f"为 {relationship_type} 关系生成了 {len(generated_memories)} 条记忆") # 使用新的日志工具函数
         return generated_memories

@@ -111,9 +111,11 @@ class OpenAIClient:
         # 6. 修改：await 调用异步 generate_response
         response_text = await self.generate_response(enhanced_system_prompt, user_prompt)
         
-        print(f"=== LLM 原始响应 ===")
-        print(response_text[:1500] if len(response_text) > 1500 else response_text)
+        # --- 优化：只打印响应的前 500 个字符 ---
+        print(f"=== LLM 原始响应 (前500字符) ===")
+        print(response_text[:500] if len(response_text) > 500 else response_text)
         print(f"=== 响应长度: {len(response_text)} ===")
+        # ---
         
         try:
             parsed = json.loads(response_text)

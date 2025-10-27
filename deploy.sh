@@ -123,26 +123,26 @@ echo "ℹ️  检查前端构建必要性 (当前逻辑为简化处理，如需�
 # 假设前端未更新，跳过构建
 echo "ℹ️  假设前端未更新，跳过构建 (如需构建，请修改脚本或手动执行)"
 # 如果确实需要构建，取消下面的注释
-# echo "📦 前端有更新，重新构建..."
-# # 安装依赖（如果 package.json 有更新）
-# if [ -f package-lock.json ] && git diff --name-only HEAD@{1} HEAD | grep -q "package-lock.json"; then
-#     echo "📦 安装前端依赖..."
-#     npm install --legacy-peer-deps
-# elif [ -f yarn.lock ] && git diff --name-only HEAD@{1} HEAD | grep -q "yarn.lock"; then
-#     echo "📦 安装前端依赖..."
-#     yarn install
-# elif git diff --name-only HEAD@{1} HEAD | grep -q "package.json"; then
-#     echo "📦 安装前端依赖..."
-#     npm install --legacy-peer-deps
-# fi
-# # 构建前端
-# echo "🔨 构建前端..."
-# npm run build
-# # 部署到 Nginx
-# echo "📋 部署前端文件..."
-# rm -rf /usr/share/nginx/html/*
-# cp -r dist/* /usr/share/nginx/html/
-# echo "✅ 前端已重新构建和部署"
+ echo "📦 前端有更新，重新构建..."
+ # 安装依赖（如果 package.json 有更新）
+ if [ -f package-lock.json ] && git diff --name-only HEAD@{1} HEAD | grep -q "package-lock.json"; then
+     echo "📦 安装前端依赖..."
+     npm install --legacy-peer-deps
+ elif [ -f yarn.lock ] && git diff --name-only HEAD@{1} HEAD | grep -q "yarn.lock"; then
+     echo "📦 安装前端依赖..."
+     yarn install
+ elif git diff --name-only HEAD@{1} HEAD | grep -q "package.json"; then
+     echo "📦 安装前端依赖..."
+     npm install --legacy-peer-deps
+ fi
+ # 构建前端
+ echo "🔨 构建前端..."
+ npm run build
+ # 部署到 Nginx
+ echo "📋 部署前端文件..."
+ rm -rf /usr/share/nginx/html/*
+ cp -r dist/* /usr/share/nginx/html/
+ echo "✅ 前端已重新构建和部署"
 
 # 更新 Nginx 配置（无论前端是否更新都要检查）
 echo "📋 更新 Nginx 配置..."
@@ -164,41 +164,57 @@ echo "🧹 [5.5/7] 清空 Neo4j 数据目录 (如果需要)..."
 NEO4J_CONTAINER_NAME="zhouyuhao-neo4j"
 NEO4J_DATA_DIR_ON_HOST="/home/zhouyuhao/neo4j/data"
 NEO4J_IMPORT_DIR_ON_HOST="/home/zhouyuhao/neo4j/import" # 可选：同时清空 import 目录
-NEO4J_LOGS_DIR_ON_HOST="/home/zhouyuhao/neo4j/logs"     # 可选：同时清空 logs 目录 (通常不需要)
+# NEO4J_LOGS_DIR_ON_HOST="/home/zhouyuhao/neo4j/logs"     # 可选：同时清空 logs 目录 (通常不需要)
 
+# 检查宿主机上的目录是否存在
 if [ -d "$NEO4J_DATA_DIR_ON_HOST" ]; then
-    echo "   正在清空 $NEO4J_DATA_DIR_ON_HOST ..."
-    # 停止 Neo4j 容器以确保安全删除
-    if docker ps --format "table {{.Names}}" | grep -q "^$NEO4J_CONTAINER_NAME$"; then
-        echo "   临时停止 Neo4j 容器 ($NEO4J_CONTAINER_NAME)..."
-        docker stop $NEO4J_CONTAINER_NAME
+    echo "   在宿主机上发现 Neo4j 数据目录: $NEO4J_DATA_DIR_ON_HOST"
+    # 检查目录是否为空（如果为空，可能意味着数据已清空或从未写入）
+    if [ -z "$(ls -A "$NEO4J_DATA_DIR_ON_HOST")" ]; then
+        echo "   目录 $NEO4J_DATA_DIR_ON_HOST 已为空，跳过清空步骤。"
+    else
+        echo "   正在清空宿主机上的 $NEO4J_DATA_DIR_ON_HOST ..."
+        # 停止 Neo4j 容器以确保安全删除
+        if docker ps --format "table {{.Names}}" | grep -q "^$NEO4J_CONTAINER_NAME$"; then
+            echo "   临时停止 Neo4j 容器 ($NEO4J_CONTAINER_NAME)..."
+            # 使用 docker exec 或在宿主机执行 docker stop
+            # 这里直接调用 docker 命令（假设容器内已安装 docker 客户端并能连接到宿主机的 docker daemon）
+            docker stop $NEO4J_CONTAINER_NAME
+        else
+            echo "   警告：Neo4j 容器 $NEO4J_CONTAINER_NAME 未运行，但仍尝试清空数据。"
+        fi
+        # 删除数据目录内容
+        rm -rf "$NEO4J_DATA_DIR_ON_HOST"/*
+        # 可选：清空 import 目录
+        if [ -d "$NEO4J_IMPORT_DIR_ON_HOST" ]; then
+            echo "   正在清空宿主机上的 $NEO4J_IMPORT_DIR_ON_HOST ..."
+            rm -rf "$NEO4J_IMPORT_DIR_ON_HOST"/*
+        fi
+        # 可选：清空 logs 目录 (通常不需要，除非调试)
+        # if [ -d "$NEO4J_LOGS_DIR_ON_HOST" ]; then
+        #     echo "   正在清空 $NEO4J_LOGS_DIR_ON_HOST ..."
+        #     rm -rf "$NEO4J_LOGS_DIR_ON_HOST"/*
+        # fi
+        # 重新启动 Neo4j 容器
+        echo "   重新启动 Neo4j 容器 ($NEO4J_CONTAINER_NAME)..."
+        docker start $NEO4J_CONTAINER_NAME
+        # 等待 Neo4j 容器启动
+        echo "   等待 Neo4j 容器启动..."
+        sleep 15 # 给 Neo4j 足够时间初始化
+        # 简单检查 Neo4j 是否正在运行
+        if docker ps --format "table {{.Names}}" | grep -q "^$NEO4J_CONTAINER_NAME$"; then
+            echo "✅ Neo4j 数据目录已清空并重启。"
+        else
+            echo "❌ Neo4j 容器重启失败，请检查。"
+            exit 1
+        fi
     fi
-    # 删除数据目录内容
-    rm -rf "$NEO4J_DATA_DIR_ON_HOST"/*
-    # 可选：清空 import 目录
-    if [ -d "$NEO4J_IMPORT_DIR_ON_HOST" ]; then
-        echo "   正在清空 $NEO4J_IMPORT_DIR_ON_HOST ..."
-        rm -rf "$NEO4J_IMPORT_DIR_ON_HOST"/*
-    fi
-    # 可选：清空 logs 目录 (通常不需要，除非调试)
-    # if [ -d "$NEO4J_LOGS_DIR_ON_HOST" ]; then
-    #     echo "   正在清空 $NEO4J_LOGS_DIR_ON_HOST ..."
-    #     rm -rf "$NEO4J_LOGS_DIR_ON_HOST"/*
-    # fi
-    # 重新启动 Neo4j 容器
-    echo "   重新启动 Neo4j 容器 ($NEO4J_CONTAINER_NAME)..."
-    docker start $NEO4J_CONTAINER_NAME
-    # 等待 Neo4j 容器启动
-    echo "   等待 Neo4j 容器启动..."
-    sleep 10 # 给 Neo4j 足够时间初始化
-    # 可以在这里添加一个检查，确认 Neo4j 已准备好接受连接
-    # 例如，可以再次使用 nc 检查 7687 或 7474 端口
-    # while ! nc -z localhost 7687; do
-    #   sleep 1
-    # done
-    echo "✅ Neo4j 数据目录已清空并重启。"
 else
-    echo "⚠️  警告：Neo4j 数据目录 $NEO4J_DATA_DIR_ON_HOST 不存在，跳过清空步骤。"
+    echo "⚠️  警告：宿主机上的 Neo4j 数据目录 $NEO4J_DATA_DIR_ON_HOST 不存在或无法访问。"
+    echo "    请确认该路径是否正确，并且当前环境（容器内）是否有权限通过 docker 命令操作宿主机目录。"
+    # 可以尝试列出父目录看是否存在
+    ls -la /home/zhouyuhao/neo4j/ 2>/dev/null || echo "    父目录 /home/zhouyuhao/neo4j/ 也不存在或无法访问。"
+    # 不退出脚本，但会跳过清空步骤
 fi
 echo ""
 
@@ -207,27 +223,26 @@ echo "📦 [6/7] 安装/更新 Python 依赖..."
 
 cd /CharacterLLM_framework
 
-# # 检查 requirements.txt 是否存在
-# if [ -f requirements.txt ]; then
-#     echo "📋 从 requirements.txt 安装依赖..."
-#     # 使用 --upgrade 确保安装最新版本
-#     pip install --upgrade -r requirements.txt
-# else
-#     echo "⚠️  警告：requirements.txt 文件不存在，跳过依赖安装。"
-#     # 如果您希望硬编码安装，可以在这里添加 pip install neo4j numpy ...
-# fi
+# --- 取消注释：检查 requirements.txt 并安装依赖 ---
+if [ -f requirements.txt ]; then
+    echo "📋 从 requirements.txt 安装依赖..."
+    # 使用 --upgrade 确保安装最新版本
+    pip install --upgrade -r requirements.txt
+else
+    echo "⚠️  警告：requirements.txt 文件不存在，跳过依赖安装。"
+    # 如果您希望硬编码安装，可以在这里添加 pip install neo4j numpy ...
+fi
 
-# # --- 修改点：先升级 numpy 和 pandas，再安装 neo4j ---
-# echo "🔍 确保 numpy 和 pandas 版本兼容..."
-# pip install --upgrade "numpy>=1.21.0" "pandas>=1.3.0" # 指定较新且通常兼容的版本
-# echo "✅ Numpy 和 Pandas 版本检查/更新完成"
+# --- 取消注释：先升级 numpy 和 pandas，再安装 neo4j ---
+echo "🔍 确保 numpy 和 pandas 版本兼容..."
+pip install --upgrade "numpy>=1.21.0" "pandas>=1.3.0" # 指定较新且通常兼容的版本
+echo "✅ Numpy 和 Pandas 版本检查/更新完成"
 
-# # 确保 neo4j 和 numpy 已安装 (可能 neo4j 会重新安装以适应新的 numpy/pandas)
-# echo "🔍 安装/更新 neo4j 库..."
-# pip install --upgrade neo4j
-# echo "✅ Neo4j 依赖检查/更新完成"
-# echo ""
-
+# 确保 neo4j 和 numpy 已安装 (可能 neo4j 会重新安装以适应新的 numpy/pandas)
+echo "🔍 安装/更新 neo4j 库..."
+pip install --upgrade neo4j
+echo "✅ Neo4j 依赖检查/更新完成"
+echo ""
 # ========== 第七步：启动后端服务 ==========
 echo "🚀 [7/7] 启动后端服务..."
 
@@ -239,7 +254,7 @@ if [ ! -f .env ]; then
     echo "创建默认 .env 文件..."
     cat > .env << 'EOF'
 OPENAI_API_KEY=sk-zk2fbc13c9dacbd9d1c577991155e25fa2568e256f5de463
-OPENAI_BASE_URL=https://api.zhizengzeng.com/v1    
+OPENAI_BASE_URL=https://api.zhizengzeng.com/v1      
 DATABASE_URL=sqlite:///./character_llm.db
 DEBUG=false
 CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:80","http://localhost:9000"]

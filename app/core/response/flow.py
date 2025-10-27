@@ -101,7 +101,7 @@ class ResponseFlow:
                 "content": no_memory_resp, 
                 "timestamp": round(time.time() - start_time, 2)
             }
-    
+
     # ------------------------------
     # 核心优化：补充响应生成（无硬编码提取，全靠LLM自主解析）
     # ------------------------------
@@ -118,29 +118,28 @@ class ResponseFlow:
         2. 通过Prompt引导LLM自主识别关键信息（地点/人物/感官细节）
         3. 按记忆类型规则要求LLM关联细节，不做代码强制
         """
+        # --- 使用新的日志格式 ---
         print("\n" + "="*60)
-        print("📝  生成补充响应...")
+        print(f"📝 生成补充响应...")
         print(f"   角色: {character_data.get('name')}")
         print(f"   用户输入: {user_input}")
         print(f"   记忆数量: {len(memories)} | 涉及类型: {[mem.get('type', '未定义') for mem in memories]}")
         print("="*60)
+        # ---
         
         formatted_memories = []
         for idx, mem in enumerate(memories, 1):
             # --- 修改：移除来源关系信息以便格式化 ---
             mem_to_format = {k: v for k, v in mem.items() if not k.startswith('_')} # 过滤掉 '_source_relationship', '_related_character_id'
-            mem_str = json.dumps(mem_to_format, ensure_ascii=False, indent=2)
-            # ---
+            # 仅打印标题和类型，避免打印完整 content
             mem_type = mem.get('type', '未定义')
-            type_rule = self.memory_type_rules.get(mem_type, "请自然融入记忆中的时间、情绪、行为影响等细节")
-            
+            mem_title = mem.get('title', f'记忆 {idx}')
             formatted_memories.append(f"""
 【第{idx}条记忆】
 - 记忆类型：{mem_type}
-- 类型专属要求：{type_rule}
-- 完整记忆详情：
-{mem_str}
+- 记忆标题：{mem_title}
 """)
+        # ---
         
         system_prompt = f"""
 你是{character_data.get('name', '角色')}，需基于以下【完整人设】和【记忆详情】生成补充响应，严格遵循：

@@ -1,3 +1,4 @@
+# app/main_full.py
 """
 角色化大语言模型知识库管理系统 - 完整版主应用 (已集成人物关系图谱 - Neo4j版)
 适配完整记忆格式 + 多响应类型（direct/immediate/supplementary/no_memory）
@@ -9,7 +10,7 @@ import time
 import json
 import uuid
 import traceback
-import asyncio # 1. 添加 asyncio 导入
+import asyncio
 from typing import Dict, List, Any, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -26,6 +27,79 @@ from app.core.graph.relationship_generator import RelationshipGenerator
 from app.core.graph.graph_store import GraphStore # 导入新版 GraphStore
 # ---
 
+# --- 1. 添加日志格式化工具函数 ---
+def log_section_start(title: str, char: str = "="):
+    """打印分隔线开始的标题"""
+    print(f"\n{char*80}")
+    print(f" {title} ".center(80, char))
+    print(f"{char*80}")
+
+def log_section_end(char: str = "="):
+    """打印分隔线结束"""
+    print(f"{char*80}\n")
+
+def log_info(message: str, indent: int = 0):
+    """打印信息日志"""
+    print("  " * indent + f"ℹ️  {message}")
+
+def log_success(message: str, indent: int = 0):
+    """打印成功日志"""
+    print("  " * indent + f"✅ {message}")
+
+def log_warning(message: str, indent: int = 0):
+    """打印警告日志"""
+    print("  " * indent + f"⚠️  {message}")
+
+def log_error(message: str, indent: int = 0):
+    """打印错误日志"""
+    print("  " * indent + f"❌ {message}")
+
+def log_debug(message: str, indent: int = 0):
+    """打印调试日志（可选，生产环境可关闭）"""
+    print("  " * indent + f"🔍 {message}")
+
+def log_character_creation(char_id: str, char_name: str, gen_time: float):
+    """专门打印角色创建完成日志"""
+    log_section_start(f"角色 [{char_name}] (ID: {char_id}) 创建完成", "=")
+    log_success(f"角色生成耗时: {gen_time:.2f} 秒")
+    log_section_end("=")
+
+def log_memory_generation_summary(char_id: str, char_name: str, self_memories: int, other_memories: int, total_time: float):
+    """专门打印记忆生成摘要日志"""
+    log_section_start(f"角色 [{char_name}] (ID: {char_id}) 记忆生成摘要", "=")
+    log_success(f"自关系记忆数: {self_memories}")
+    log_success(f"其他关系记忆数: {other_memories}")
+    log_info(f"记忆生成+存储耗时: {total_time:.2f} 秒")
+    log_section_end("=")
+
+def log_chat_start(character_id: str, user_input: str):
+    """打印对话开始日志"""
+    log_section_start("开始处理对话请求", "-")
+    log_info(f"角色ID: {character_id}")
+    log_info(f"用户输入: {user_input}")
+    log_section_end("-")
+
+def log_chat_response(response_type: str, character_id: str, user_input: str, content: str, timestamp: float, memory_count: int = 0):
+    """打印对话响应日志"""
+    log_section_start(f"{response_type.upper()} 响应发送", "-")
+    log_info(f"角色ID: {character_id}")
+    log_info(f"用户输入: {user_input}")
+    log_info(f"响应内容: {content[:150]}{'...' if len(content) > 150 else ''}")
+    log_info(f"耗时: {timestamp:.2f}秒")
+    if memory_count > 0:
+        log_info(f"关联记忆数: {memory_count}")
+    log_section_end("-")
+
+def log_chat_complete(character_id: str, user_input: str, total_time: float, response_count: int):
+    """打印对话完成日志"""
+    log_section_start("对话响应完成", "=")
+    log_info(f"角色ID: {character_id}")
+    log_info(f"用户输入: {user_input}")
+    log_info(f"总耗时: {total_time:.2f}秒")
+    log_info(f"发送响应数: {response_count}")
+    log_section_end("=")
+
+# ---
 
 app = FastAPI(
     title="角色化大语言模型知识库管理系统",
@@ -176,6 +250,7 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
     start_time = time.time()
     try:
         # 3. 修改：await 调用异步生成方法
+        log_info(f"开始生成角色，描述: {request.description}")
         character_data = await character_generator.generate_character(request.description)
         if "error" in character_data:
             raise ValueError(f"LLM生成角色失败: {character_data['error']}")
@@ -185,10 +260,10 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
         characters[character_id] = character_data
 
         role_gen_time = time.time() - start_time
-        print(f"=== 角色 [{character_id}: {character_data['name']}] 生成耗时: {role_gen_time:.2f} 秒 ===")
+        log_character_creation(character_id, character_data['name'], role_gen_time)
 
         # --- 新增：生成关联角色和关系，并存入图谱 ---
-        print(f"--- 开始为角色 {character_id} 生成关系图谱 ---")
+        log_info(f"开始为角色 {character_id} 生成关系图谱")
         related_characters = await relationship_generator.generate_related_characters(character_data, count=3) # 生成3个关联角色
         relationships = await relationship_generator.generate_relationships(character_data, related_characters)
 
@@ -203,7 +278,7 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
         for rel in relationships:
             graph_store.create_relationship_with_memories(rel)
 
-        print(f"--- 角色 {character_id} 的关系图谱生成并存储完成 ---")
+        log_success(f"角色 {character_id} 的关系图谱生成并存储完成")
         # ---
 
         background_tasks.add_task(
@@ -226,7 +301,7 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
         }
     except Exception as e:
         error_detail = f"角色生成失败: {str(e)}\n{traceback.format_exc()}"
-        print(error_detail)
+        log_error(error_detail)
         raise HTTPException(status_code=500, detail=f"角色生成失败: {str(e)}")
 
 @app.get("/api/v1/characters", response_model=List[CharacterResponse])
@@ -259,7 +334,7 @@ async def get_character_memories(character_id: str):
                     mem[key] = json.loads(mem[key])
             processed_memories.append(MemoryResponse(**mem))
         except Exception as e:
-            print(f"跳过格式异常的记忆: {str(e)} | 记忆ID: {mem.get('id', '未知')}")
+            log_warning(f"跳过格式异常的记忆: {str(e)} | 记忆ID: {mem.get('id', '未知')}")
             continue
 
     return processed_memories
@@ -282,7 +357,7 @@ async def regenerate_character_memories(character_id: str, background_tasks: Bac
     success = graph_store.delete_character_graph(character_id)
     if not success:
         raise HTTPException(status_code=500, detail="删除旧图谱数据失败")
-    print(f"=== 已删除角色 [{character_id}] 的所有旧关系和记忆 ===")
+    log_info(f"已删除角色 [{character_id}] 的所有旧关系和记忆")
     # ---
     
     # 重新生成角色和关系（简化处理，实际可能需要更复杂的重置逻辑）
@@ -313,11 +388,7 @@ async def chat_with_character(request: ChatRequest):
     async def event_generator():
         try:
             start_time = time.time()
-
-            print("\n" + "="*80)
-            print("🔄 开始处理对话请求 | 角色ID:", request.character_id)
-            print(f"📌 用户输入: {request.message}")
-            print("="*80)
+            log_chat_start(request.character_id, request.message)
 
             # 6. 修改：使用 async for 遍历异步生成器
             response_count = 0
@@ -349,28 +420,21 @@ async def chat_with_character(request: ChatRequest):
 
                 yield f" {response_json}\n\n"
 
-                print("\n" + "="*80)
-                print(f"🔄 {flow_resp['type'].upper()}响应发送 | 角色ID: {request.character_id}")
-                print(f"📌 用户输入: {request.message}")
-                print(f"💬 响应内容: {flow_resp['content'][:150]}{'...' if len(flow_resp['content']) > 150 else ''}")
-                print(f"⏱️  耗时: {flow_resp.get('timestamp', 0):.2f}秒")
-                if current_resp.memories:
-                    print(f"🧠 关联记忆数: {len(current_resp.memories)}")
-                    for j, mem in enumerate(current_resp.memories):
-                        print(f"     📝 记忆 {j+1}: {mem.title} (相关性: {mem.relevance:.3f})")
-                print("="*80 + "\n")
+                log_chat_response(
+                    flow_resp['type'],
+                    request.character_id,
+                    request.message,
+                    flow_resp['content'],
+                    flow_resp.get('timestamp', 0),
+                    len(current_resp.memories) if current_resp.memories else 0
+                )
 
             total_time = time.time() - start_time
-            print("\n" + "="*80)
-            print(f"✅ 对话响应完成 | 角色ID: {request.character_id}")
-            print(f"📌 用户输入: {request.message}")
-            print(f"⏱️  总耗时: {total_time:.2f}秒")
-            print(f"📊 发送响应数: {response_count}")
-            print("="*80 + "\n")
+            log_chat_complete(request.character_id, request.message, total_time, response_count)
 
         except Exception as e:
             error_detail = f"对话生成失败: {str(e)}\n{traceback.format_exc()}"
-            print(error_detail)
+            log_error(error_detail)
             error_data = {"error": str(e)}
             error_json = json.dumps(error_data, ensure_ascii=False)
             yield f" {error_json}\n\n"
@@ -398,7 +462,8 @@ async def generate_and_store_graph_memories(
     memory_start = time.time()
     try:
         character_name = main_character.get("name", "未知角色")
-        print(f"\n=== 开始为角色 [{character_id}: {character_name}] 生成图谱记忆 ===")
+        log_section_start(f"开始为角色 [{character_id}: {character_name}] 生成图谱记忆", "=")
+        log_info("开始并发生成不同类型的记忆...")
 
         # --- 修改：并发生成不同类型的记忆 ---
         # 1. 为自关系生成记忆
@@ -406,10 +471,6 @@ async def generate_and_store_graph_memories(
         # 2. 为每个关联角色的关系生成记忆
         relationship_tasks = []
         for rel_char in related_characters:
-            # 假设 generate_memories_for_relationship 可以根据两个角色推断关系类型
-            # 或者可以从 relationships 列表中获取具体的关系类型
-            # 这里简化处理，使用 "other" 或者从 relationships 中查找
-            # 为了兼容，我们假设 generate_memories_for_relationship 内部能处理
             task = relationship_generator.generate_memories_for_relationship(main_character, rel_char, relationship_type="other") # 可以根据具体关系类型调整
             relationship_tasks.append(task)
 
@@ -427,7 +488,7 @@ async def generate_and_store_graph_memories(
              rel_id = f"{character_id}_{rel_char['id']}"
              all_memories_to_store[rel_id] = rel_memory_lists[i]
 
-        print(f"--- 为角色 {character_id} 生成了 {len(self_memories)} 条自关系记忆 和 {len(all_rel_memories)} 条其他关系记忆 ---")
+        log_info(f"生成完成: 自关系记忆 {len(self_memories)} 条, 其他关系记忆 {len(all_rel_memories)} 条")
 
         # --- 修改：将记忆存入 Neo4j 图谱 ---
         # 1. 首先确保主角色节点存在
@@ -446,19 +507,14 @@ async def generate_and_store_graph_memories(
             else:
                 rel["memories"] = [] # 如果没有为该关系生成记忆，则为空列表
             graph_store.create_relationship_with_memories(rel)
-
         # ---
 
 
         memory_gen_time = time.time() - memory_start
-
-        print(f"=== 角色 [{character_name}] 的图谱记忆生成并存储到 Neo4j 完成 ===")
-        print(f"  自关系记忆数: {len(self_memories)}")
-        print(f"  其他关系记忆数: {len(all_rel_memories)}")
-        print(f"  记忆生成+存储耗时: {memory_gen_time:.2f} 秒")
+        log_memory_generation_summary(character_id, character_name, len(self_memories), len(all_rel_memories), memory_gen_time)
 
         total_time = time.time() - start_time
-        print(f"  角色生成→关系生成→记忆存储完整流程耗时: {total_time:.2f} 秒")
+        log_info(f"角色生成→关系生成→记忆存储完整流程耗时: {total_time:.2f} 秒")
 
         if character_id in characters:
             characters[character_id]["generation_info"] = {
@@ -471,32 +527,36 @@ async def generate_and_store_graph_memories(
 
     except Exception as e:
         error_detail = f"图谱记忆生成失败: {str(e)}\n{traceback.format_exc()}"
-        print(f"\n=== 角色 [{character_id}] 图谱记忆生成失败 ===\n{error_detail}\n")
+        log_section_start(f"角色 [{character_id}] 图谱记忆生成失败", "=")
+        log_error(error_detail)
+        log_section_end("=")
+
 
 # ------------------------------------------------------------------------------
 # 启动和关闭服务器
 # ------------------------------------------------------------------------------
 @app.on_event("shutdown")
 async def shutdown_event():
-    print("--- 应用关闭，关闭 Neo4j 连接 ---")
+    log_info("--- 应用关闭，关闭 Neo4j 连接 ---")
     graph_store.close() # 关闭 Neo4j 连接
 
 if __name__ == "__main__":
     import uvicorn
 
     port = int(os.environ.get("PORT", 8000))
-    print(f"=== 启动角色化大语言模型知识库管理系统（V2.2.4，支持 Neo4j 人物关系图谱） ===")
-    print(f"  端口: {port}")
-    print(f"  记忆存储路径: ./chroma_db_full")
-    print(f"  图谱存储: Neo4j (bolt://localhost:7687)")
-    print(f"  支持响应类型: direct/immediate/supplementary/no_memory")
-    print(f"  支持特性: 实时响应流(SSE), 直接日志输出, 人物关系图谱")
-    print(f"  新增API: GET /api/v1/characters/{{character_id}}/relationships")
+    log_section_start("启动角色化大语言模型知识库管理系统", "=")
+    log_info(f"端口: {port}")
+    log_info(f"记忆存储路径: ./chroma_db_full")
+    log_info(f"图谱存储: Neo4j (bolt://localhost:7687)")
+    log_info(f"支持响应类型: direct/immediate/supplementary/no_memory")
+    log_info(f"支持特性: 实时响应流(SSE), 直接日志输出, 人物关系图谱")
+    log_info(f"新增API: GET /api/v1/characters/{{character_id}}/relationships")
+    log_section_end("=")
 
     uvicorn.run(
         "app.main_full:app",
         host="0.0.0.0",
         port=port,
         reload=True,
-        log_level="info"
+        log_level="warning" # 降低 uvicorn 日志级别，只显示 warning 及以上
     )

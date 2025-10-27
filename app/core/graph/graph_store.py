@@ -33,7 +33,7 @@ class GraphStore:
             # 测试连接
             with self.driver.session() as session:
                 session.run("RETURN 1")
-            print("--- 成功连接到 Neo4j 数据库 ---")
+            print("--- 成功连接到 Neo4j 数据库 ---") # 可以保留，或者使用新的工具函数
             # 确保节点和关系上有索引以提高查询效率
             self._create_indices()
         except Exception as e:
@@ -49,13 +49,13 @@ class GraphStore:
             session.run("CREATE INDEX relationship_id_index IF NOT EXISTS FOR (r:Relationship) ON (r.relationship_id)")
             # 为 Memory 的 id 属性创建索引
             session.run("CREATE INDEX memory_id_index IF NOT EXISTS FOR (m:Memory) ON (m.id)")
-            print("--- Neo4j 索引检查/创建完成 ---")
+            print("--- Neo4j 索引检查/创建完成 ---") # 可以保留
 
     def close(self):
         """关闭数据库连接"""
         if self.driver:
             self.driver.close()
-            print("--- Neo4j 连接已关闭 ---")
+            print("--- Neo4j 连接已关闭 ---") # 可以保留
 
     def create_character_node(self, character_data: Dict[str, Any]) -> bool:
         """
