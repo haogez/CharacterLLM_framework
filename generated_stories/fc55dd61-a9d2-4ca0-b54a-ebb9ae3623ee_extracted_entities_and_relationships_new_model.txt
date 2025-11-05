@@ -1,0 +1,397 @@
+{
+  "entities": [
+    {
+      "app_id": "5a44e936-71ab-4704-b288-314eadfcd0be",
+      "name": "家中",
+      "type": "Place",
+      "description": "事件 '婴幼儿期无助的啼哭与环境紧张' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "7e713350-8171-490c-a3ff-64883d17e61f",
+      "name": "婴幼儿",
+      "type": "Concept",
+      "description": "与事件 '婴幼儿期无助的啼哭与环境紧张' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "ec16ded3-c651-4f2c-ba4e-ce83ef4c1b77",
+      "name": "无助",
+      "type": "Concept",
+      "description": "与事件 '婴幼儿期无助的啼哭与环境紧张' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "abf0cdfa-49fa-4186-b78d-21e0ec5f82ee",
+      "name": "安全感",
+      "type": "Concept",
+      "description": "与事件 '婴幼儿期无助的啼哭与环境紧张' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "36169904-0ef8-44bd-9c97-cdbd616057ed",
+      "name": "家中客厅",
+      "type": "Place",
+      "description": "事件 '母亲摇椅中温柔哼唱儿歌' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "8f31906f-5fc0-46a0-b525-9c4e04f2cbcb",
+      "name": "母爱",
+      "type": "Concept",
+      "description": "与事件 '母亲摇椅中温柔哼唱儿歌' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "fc6de76f-caf6-4b41-9070-990d90f94a96",
+      "name": "安慰",
+      "type": "Concept",
+      "description": "与事件 '母亲摇椅中温柔哼唱儿歌' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1108a1c1-d855-4b4a-b6d9-3e1fe19f1307",
+      "name": "婴幼儿",
+      "type": "Concept",
+      "description": "与事件 '母亲摇椅中温柔哼唱儿歌' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "2557e942-fa41-415f-b4e6-83eee8020ac7",
+      "name": "白家门口",
+      "type": "Place",
+      "description": "事件 '邻居林婉柔赠送图画书' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "7acaf4d2-6808-4047-a7fd-e713361a5a90",
+      "name": "邻居关怀",
+      "type": "Concept",
+      "description": "与事件 '邻居林婉柔赠送图画书' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "cd11b699-f107-4cf2-8397-b6c3dcf32a49",
+      "name": "图书",
+      "type": "Concept",
+      "description": "与事件 '邻居林婉柔赠送图画书' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "7692142c-a680-4149-8799-918f341a2278",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '邻居林婉柔赠送图画书' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d6e1c7aa-0321-4d32-8816-ee659a1d8b3c",
+      "name": "社区小花园长椅",
+      "type": "Place",
+      "description": "事件 '社区妈妈陈秋萍送温热牛奶' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "aa0dc5be-48cc-4efe-9463-81523223d1de",
+      "name": "社区关怀",
+      "type": "Concept",
+      "description": "与事件 '社区妈妈陈秋萍送温热牛奶' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a566dfca-d05a-41c1-91ce-b2825dd71936",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '社区妈妈陈秋萍送温热牛奶' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "7fd5d762-9d70-45c2-937f-a125956625d7",
+      "name": "支持",
+      "type": "Concept",
+      "description": "与事件 '社区妈妈陈秋萍送温热牛奶' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "7078dfb8-f16b-4dc1-9419-9eed791126b5",
+      "name": "家中",
+      "type": "Place",
+      "description": "事件 '对白佳唯噪音敏感的表现' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "a8b7e2f1-ce63-438d-b082-d9d5b8361c77",
+      "name": "噪音敏感",
+      "type": "Concept",
+      "description": "与事件 '对白佳唯噪音敏感的表现' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "8e76782c-47ed-4fce-a973-4cdcc41df07c",
+      "name": "安全感",
+      "type": "Concept",
+      "description": "与事件 '对白佳唯噪音敏感的表现' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "98f6e748-855d-45da-b8a4-7df2151ff071",
+      "name": "依赖",
+      "type": "Concept",
+      "description": "与事件 '对白佳唯噪音敏感的表现' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4eccc4c6-a21f-4978-8aa8-005fe0b0a6e9",
+      "name": "学校图书馆",
+      "type": "Place",
+      "description": "事件 '童年期学校图书馆的安静角落' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "9c713275-8589-4389-b1e5-e7e73d28d8d8",
+      "name": "童年",
+      "type": "Concept",
+      "description": "与事件 '童年期学校图书馆的安静角落' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1eb827e4-d857-48ac-a825-e2363c84d55c",
+      "name": "安静",
+      "type": "Concept",
+      "description": "与事件 '童年期学校图书馆的安静角落' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e3ae54fe-18f4-4e0d-b4d7-a2377480acda",
+      "name": "孤独",
+      "type": "Concept",
+      "description": "与事件 '童年期学校图书馆的安静角落' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4e3231f6-57fc-4ec4-9b56-7aa224abb361",
+      "name": "学校图书馆角落",
+      "type": "Place",
+      "description": "事件 '童年期与同学林曦的友谊' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "cfe6ea69-5de7-4f15-a38b-0f9a1761b8c1",
+      "name": "友谊",
+      "type": "Concept",
+      "description": "与事件 '童年期与同学林曦的友谊' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "45186b11-2272-4530-b78e-6606e909ce9d",
+      "name": "信任",
+      "type": "Concept",
+      "description": "与事件 '童年期与同学林曦的友谊' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c7bdf73a-72ef-41e4-ae69-398a0779931e",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '童年期与同学林曦的友谊' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6d02f66b-b008-41a1-8c16-9ba2b02d3381",
+      "name": "家中厨房窗边",
+      "type": "Place",
+      "description": "事件 '童年期母女间的温和对话' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "4bd2bf37-8402-4585-84b1-5c783700cebf",
+      "name": "母女关系",
+      "type": "Concept",
+      "description": "与事件 '童年期母女间的温和对话' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "8168ff3f-8fe3-4486-aa97-3b2de443cb21",
+      "name": "理解",
+      "type": "Concept",
+      "description": "与事件 '童年期母女间的温和对话' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "faab7f57-4c94-466c-a7d0-2ecbee172b4a",
+      "name": "温柔",
+      "type": "Concept",
+      "description": "与事件 '童年期母女间的温和对话' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b5b605e6-5cfa-4e38-92c9-fb3482cf13e2",
+      "name": "社区活动现场",
+      "type": "Place",
+      "description": "事件 '童年期参与社区公益活动' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "2bcb7d9b-44a8-4c30-8c4d-eb5a9a0a3488",
+      "name": "公益",
+      "type": "Concept",
+      "description": "与事件 '童年期参与社区公益活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6eddc502-a6e7-4868-907b-7764fc2147e2",
+      "name": "社交",
+      "type": "Concept",
+      "description": "与事件 '童年期参与社区公益活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "0cf60f57-84c0-4fb1-adc5-654a2c8a20d9",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '童年期参与社区公益活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1e81f934-c579-462e-a7e4-0be7ec55d310",
+      "name": "家中小房间",
+      "type": "Place",
+      "description": "事件 '青少年期夜晚房间的孤独与恐惧' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "3802c92a-2b4b-453c-91be-d6f208ba384c",
+      "name": "青少年",
+      "type": "Concept",
+      "description": "与事件 '青少年期夜晚房间的孤独与恐惧' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "7b200088-c1c1-4b37-b1e3-a8d2f34f5a2e",
+      "name": "孤独",
+      "type": "Concept",
+      "description": "与事件 '青少年期夜晚房间的孤独与恐惧' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e75d1dad-d169-4be1-9c52-f2d5bc00b2e0",
+      "name": "家庭争吵",
+      "type": "Concept",
+      "description": "与事件 '青少年期夜晚房间的孤独与恐惧' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3c0adbe0-2a89-4701-b83e-2580fae98bf6",
+      "name": "学校图书馆窗边",
+      "type": "Place",
+      "description": "事件 '青少年期与林曦图书馆约定' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "b32f8dd3-af61-4138-9121-420a2098c61f",
+      "name": "青少年",
+      "type": "Concept",
+      "description": "与事件 '青少年期与林曦图书馆约定' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "04f06510-ff83-451a-9a7b-0bef3a0f934a",
+      "name": "友情",
+      "type": "Concept",
+      "description": "与事件 '青少年期与林曦图书馆约定' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c5fabf02-ccd1-4dca-bcee-86dc7bea009d",
+      "name": "信任",
+      "type": "Concept",
+      "description": "与事件 '青少年期与林曦图书馆约定' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "0f2a3458-b794-46bb-b173-8bd0753b4f7c",
+      "name": "社区图书馆",
+      "type": "Place",
+      "description": "事件 '青少年期图书馆邻居细微关怀' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "dd9100e7-5a42-4567-9ddf-2e1238e20bbe",
+      "name": "邻里关怀",
+      "type": "Concept",
+      "description": "与事件 '青少年期图书馆邻居细微关怀' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "20b145f8-ae3b-45fb-abcf-2a0910c97aae",
+      "name": "青少年",
+      "type": "Concept",
+      "description": "与事件 '青少年期图书馆邻居细微关怀' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a39332c6-ccdc-49bf-8d2d-0c35d39abe4a",
+      "name": "支持",
+      "type": "Concept",
+      "description": "与事件 '青少年期图书馆邻居细微关怀' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a4a662c9-47bf-4f6a-a541-85a02035ddca",
+      "name": "社区活动现场",
+      "type": "Place",
+      "description": "事件 '青少年期参与环保宣传活动' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "e377dc49-e186-456a-970b-749462ad4a5d",
+      "name": "青少年",
+      "type": "Concept",
+      "description": "与事件 '青少年期参与环保宣传活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b7ae7d1d-7c9a-4144-81d1-2751736462dd",
+      "name": "公益",
+      "type": "Concept",
+      "description": "与事件 '青少年期参与环保宣传活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a2176367-baf3-4c78-b4af-99d534c03089",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '青少年期参与环保宣传活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "574f6936-1bd4-4464-a746-71bd49a25867",
+      "name": "家中卧室",
+      "type": "Place",
+      "description": "事件 '青少年期夜晚自我鼓励' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "7bddadf7-97fa-4622-ad66-27fcd116482b",
+      "name": "青少年",
+      "type": "Concept",
+      "description": "与事件 '青少年期夜晚自我鼓励' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3f545bb7-9359-4605-8cd6-1ce5d071eef3",
+      "name": "自我成长",
+      "type": "Concept",
+      "description": "与事件 '青少年期夜晚自我鼓励' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c02184d8-510a-4e18-b55e-123b83e708dd",
+      "name": "希望",
+      "type": "Concept",
+      "description": "与事件 '青少年期夜晚自我鼓励' 相关的标签",
+      "properties": {}
+    }
+  ],
+  "relationships": []
+}

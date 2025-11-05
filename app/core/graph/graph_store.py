@@ -12,6 +12,10 @@
 7. 修复 CSV 中 JSON 字符串引号转义问题 - 使用 Base64 编码
 8. 修复重复角色节点问题
 9. 修复 Cypher 弃用警告
+10. 为所有角色（包括关联角色）添加完整的印象结构
+11. 基于多因素的印象强度计算
+12. 事件细节节点（物品、动作、对话）
+13. 优化节点结构，确保清晰无重复
 """
 
 import os
@@ -19,7 +23,7 @@ import json
 import uuid
 import csv
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from neo4j import GraphDatabase
 from app.core.utils.log_utils import log_error, log_success, log_warning, log_info, log_debug
@@ -67,7 +71,7 @@ class GraphStore:
     def create_character_node(self, character_data: Dict[str, Any]) -> bool:
         """
         创建或更新角色节点。
-        使用角色名称作为唯一标识，避免重复创建。
+        使用 app_id 作为唯一标识，避免重复创建。
         """
         char_name = character_data.get("name")
         if not char_name:
@@ -84,7 +88,7 @@ class GraphStore:
                 # 确保标签为 Character
                 node_properties["is_main_character"] = node_properties.get("is_main_character", False)
 
-                # **关键修改**：在设置到数据库之前，将所有嵌套结构转为JSON字符串
+                # 将所有嵌套结构转为JSON字符串
                 for key, value in node_properties.items():
                     if isinstance(value, (dict, list)) and not isinstance(value, (str, int, float, bool)):
                         node_properties[key] = json.dumps(value, ensure_ascii=False)
@@ -106,7 +110,7 @@ class GraphStore:
     def create_general_entity_node(self, entity_data: Dict[str, Any]) -> bool:
         """
         创建通用实体节点 (非人物)。
-        根据实体类型创建不同标签的节点，并使用 name 作为唯一标识。
+        根据实体类型创建不同标签的节点，并使用 app_id 作为唯一标识。
         """
         ent_name = entity_data.get("name")
         ent_type = entity_data.get("type", "Entity").upper()
@@ -122,7 +126,7 @@ class GraphStore:
                 node_properties.pop("id", None)
                 node_properties["app_id"] = app_id
 
-                # **关键修改**：在设置到数据库之前，将所有嵌套结构转为JSON字符串
+                # 将所有嵌套结构转为JSON字符串
                 for key, value in node_properties.items():
                     if isinstance(value, (dict, list)) and not isinstance(value, (str, int, float, bool)):
                         node_properties[key] = json.dumps(value, ensure_ascii=False)
@@ -146,7 +150,7 @@ class GraphStore:
 
     def create_event_node(self, event_data: Dict[str, Any]) -> bool:
         """
-        创建事件节点。
+        创建事件节点，包含事件的真实内容。
         """
         event_app_id = event_data.get("id", str(uuid.uuid4()))
         event_data["id"] = event_app_id
@@ -157,8 +161,10 @@ class GraphStore:
                 event_properties = event_data.copy()
                 event_properties.pop("id", None)
                 event_properties["app_id"] = event_app_id
+                # 存储事件的原始内容作为context
+                event_properties["context"] = event_data.get("content", "")
 
-                # **关键修改**：在设置到数据库之前，将所有嵌套结构转为JSON字符串
+                # 将所有嵌套结构转为JSON字符串
                 for key, value in event_properties.items():
                     if isinstance(value, (dict, list)) and not isinstance(value, (str, int, float, bool)):
                         event_properties[key] = json.dumps(value, ensure_ascii=False)
@@ -177,13 +183,104 @@ class GraphStore:
                 print(f"创建事件节点 '{event_app_id}' 失败: {e}")
                 return False
 
-    def create_impression_node(self, impression_data: Dict[str, Any]) -> bool:
+    def create_event_detail_node(self, event_app_id: str, detail_data: Dict[str, Any]) -> bool:
         """
-        创建印象节点。
+        创建事件细节节点（物品、动作、对话等）。
+        detail_type: "object", "action", "dialogue"
+        """
+        detail_app_id = detail_data.get("id", str(uuid.uuid4()))
+        detail_type = detail_data.get("type", "DETAIL")
+        detail_content = detail_data.get("content", "")
+        
+        if not all([event_app_id, detail_type, detail_content]):
+            print("错误：细节数据必须包含 'type' 和 'content' 字段，且需要事件ID")
+            return False
+
+        with self.driver.session(database=self.database) as session:
+            try:
+                detail_properties = detail_data.copy()
+                detail_properties.pop("id", None)
+                detail_properties["app_id"] = detail_app_id
+                detail_properties["event_app_id"] = event_app_id
+
+                # 将所有嵌套结构转为JSON字符串
+                for key, value in detail_properties.items():
+                    if isinstance(value, (dict, list)) and not isinstance(value, (str, int, float, bool)):
+                        detail_properties[key] = json.dumps(value, ensure_ascii=False)
+
+                # 创建特定类型的细节节点
+                session.run(
+                    f"""
+                    MERGE (d:{detail_type} {{app_id: $detail_app_id}})
+                    SET d = $properties
+                    """,
+                    detail_app_id=detail_app_id,
+                    properties=detail_properties
+                )
+                
+                # 连接到事件节点
+                session.run(
+                    """
+                    MATCH (d) WHERE d.app_id = $detail_app_id
+                    MATCH (e:Event) WHERE e.app_id = $event_app_id
+                    MERGE (e)-[:HAS_DETAIL]->(d)
+                    """,
+                    detail_app_id=detail_app_id,
+                    event_app_id=event_app_id
+                )
+                
+                print(f"--- 事件细节节点 ({detail_type}: {detail_app_id}) 创建并关联到事件 {event_app_id} 成功 ---")
+                return True
+            except Exception as e:
+                print(f"创建事件细节节点 '{detail_app_id}' 失败: {e}")
+                return False
+
+    def calculate_impression_strength(self, character_data: Dict[str, Any], event_data: Dict[str, Any]) -> int:
+        """
+        根据多因素计算印象强度:
+        1. 事件发生时间（越近强度越高）
+        2. 事件影响程度（正面/负面/重大程度）
+        3. 角色性格特质（敏感性等）
+        """
+        # 基础强度
+        base_strength = 70
+        
+        # 1. 时间因素（假设事件有timestamp字段）
+        event_time_str = event_data.get("time", {}).get("specific", "")
+        try:
+            event_time = datetime.fromisoformat(event_time_str)
+            days_since = (datetime.now() - event_time).days
+            # 时间衰减：每过30天衰减10%，最低保留30%
+            time_factor = max(0.3, 1 - (days_since / 300))  # 300天约衰减70%
+        except:
+            time_factor = 1.0  # 无法解析时间则不衰减
+        
+        # 2. 事件影响因素
+        impact_score = event_data.get("importance", {}).get("score", 5) / 5.0  # 归一化到0-1
+        event_type = event_data.get("type", "")
+        if event_type in ["trauma", "achievement"]:  # 重大事件额外加成
+            impact_factor = impact_score * 1.5
+        else:
+            impact_factor = impact_score
+        
+        # 3. 角色性格因素（神经质/开放性越高，记忆越深刻）
+        personality = character_data.get("personality", {})
+        neuroticism = personality.get("neuroticism", 50) / 100.0  # 归一化到0-1
+        openness = personality.get("openness", 50) / 100.0
+        personality_factor = 0.5 + (neuroticism + openness) / 4  # 范围0.5-1.0
+        
+        # 计算最终强度（0-100）
+        final_strength = int(base_strength * time_factor * impact_factor * personality_factor)
+        return max(10, min(100, final_strength))  # 确保在10-100之间
+
+    def create_impression_node(self, impression_data: Dict[str, Any], character_data: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
+        """
+        创建印象节点，基于角色性格、事件重要性和时间计算强度。
         """
         impression_app_id = impression_data.get("id", str(uuid.uuid4()))
         impression_data["id"] = impression_app_id
-        # 确保 impression_data 包含 source_character_app_id 和 event_app_id
+        
+        # 确保印象数据包含必要字段
         source_char_id = impression_data.get("source_character_app_id")
         event_id = impression_data.get("event_app_id")
         if not source_char_id or not event_id:
@@ -195,8 +292,28 @@ class GraphStore:
                 impression_properties = impression_data.copy()
                 impression_properties.pop("id", None)
                 impression_properties["app_id"] = impression_app_id
+                
+                # 计算印象强度
+                impression_properties["strength"] = self.calculate_impression_strength(character_data, event_data)
+                
+                # 根据强度决定细节保留程度
+                full_content = impression_data.get("content", "")
+                if impression_properties["strength"] < 30:
+                    # 强度低，保留更少细节
+                    content_length = max(5, int(len(full_content) * 0.3))
+                    impression_properties["content"] = full_content[:content_length] + "..."
+                    impression_properties["is_faded"] = True
+                elif impression_properties["strength"] < 70:
+                    # 强度中等，保留部分细节
+                    content_length = max(10, int(len(full_content) * 0.7))
+                    impression_properties["content"] = full_content[:content_length]
+                    impression_properties["is_faded"] = False
+                else:
+                    # 强度高，保留完整细节
+                    impression_properties["content"] = full_content
+                    impression_properties["is_faded"] = False
 
-                # **关键修改**：在设置到数据库之前，将所有嵌套结构转为JSON字符串
+                # 将所有嵌套结构转为JSON字符串
                 for key, value in impression_properties.items():
                     if isinstance(value, (dict, list)) and not isinstance(value, (str, int, float, bool)):
                         impression_properties[key] = json.dumps(value, ensure_ascii=False)
@@ -209,79 +326,99 @@ class GraphStore:
                     impression_app_id=impression_app_id,
                     properties=impression_properties
                 )
-                print(f"--- 印象节点 ({impression_app_id}) 创建/更新成功 ---")
+                print(f"--- 印象节点 ({impression_app_id}) 创建/更新成功 (强度: {impression_properties['strength']}) ---")
                 return True
             except Exception as e:
                 print(f"创建印象节点 '{impression_app_id}' 失败: {e}")
                 return False
 
-    def connect_character_to_event_via_impression(self, character_app_id: str, event_app_id: str, impression_data: Dict[str, Any]) -> bool:
+    def create_character_event_impression_triple(self, character_data: Dict[str, Any], event_data: Dict[str, Any], impression_content: str) -> bool:
         """
-        连接角色 -> 印象 -> 事件。
-        如果印象已存在，则更新印象。
+        为单个角色创建完整的"角色->印象->事件"结构
         """
-        # 1. 创建或更新印象节点
-        impression_success = self.create_impression_node(impression_data)
-        if not impression_success:
-            print("连接角色到事件失败：印象节点创建失败。")
+        character_app_id = character_data.get("id")
+        event_app_id = event_data.get("id")
+        
+        if not all([character_app_id, event_app_id, impression_content]):
+            print("错误：创建角色-印象-事件三元组缺少必要数据")
             return False
-
-        impression_app_id = impression_data.get("id")
-        if not impression_app_id:
-            print("错误：印象数据必须包含 'id' 字段。")
+            
+        # 1. 确保角色和事件节点存在
+        if not self.create_character_node(character_data):
             return False
-
+            
+        if not self.create_event_node(event_data):
+            return False
+            
+        # 2. 创建印象数据
+        impression_data = {
+            "id": str(uuid.uuid4()),
+            "source_character_app_id": character_app_id,
+            "event_app_id": event_app_id,
+            "content": impression_content,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # 3. 创建印象节点（使用新的带强度计算的方法）
+        if not self.create_impression_node(impression_data, character_data, event_data):
+            return False
+            
+        # 4. 建立关系
         with self.driver.session(database=self.database) as session:
             try:
-                # 2. 确保角色和事件节点存在
-                char_result = session.run(
-                    """
-                    MATCH (c:Character) WHERE c.app_id = $char_app_id
-                    RETURN c
-                    """,
-                    char_app_id=character_app_id
-                ).single()
-                if not char_result:
-                    print(f"错误：未找到角色 app_id 为 {character_app_id} 的节点。")
-                    return False
-
-                event_result = session.run(
-                    """
-                    MATCH (e:Event) WHERE e.app_id = $event_app_id
-                    RETURN e
-                    """,
-                    event_app_id=event_app_id
-                ).single()
-                if not event_result:
-                    print(f"错误：未找到事件 app_id 为 {event_app_id} 的节点。")
-                    return False
-
-                # 3. 连接角色 -> 印象
+                # 角色 -> 印象
                 session.run(
                     """
                     MATCH (c:Character {app_id: $char_app_id}), (i:Impression {app_id: $impression_app_id})
                     MERGE (c)-[:HAS_IMPRESSION]->(i)
                     """,
                     char_app_id=character_app_id,
-                    impression_app_id=impression_app_id
+                    impression_app_id=impression_data["id"]
                 )
-                print(f"--- 角色 {character_app_id} -> 印象 {impression_app_id} 连接成功 ---")
-
-                # 4. 连接印象 -> 事件
+                
+                # 印象 -> 事件
                 session.run(
                     """
                     MATCH (i:Impression {app_id: $impression_app_id}), (e:Event {app_id: $event_app_id})
                     MERGE (i)-[:OF_EVENT]->(e)
                     """,
-                    impression_app_id=impression_app_id,
+                    impression_app_id=impression_data["id"],
                     event_app_id=event_app_id
                 )
-                print(f"--- 印象 {impression_app_id} -> 事件 {event_app_id} 连接成功 ---")
-
+                
+                print(f"--- 角色 {character_app_id} -> 印象 -> 事件 {event_app_id} 三元组创建成功 ---")
                 return True
             except Exception as e:
-                print(f"连接角色 {character_app_id} -> 印象 -> 事件 {event_app_id} 失败: {e}")
+                print(f"创建角色-印象-事件三元组失败: {e}")
                 return False
+
+    def create_all_character_event_impressions(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], event_data: Dict[str, Any], impression_contents: Dict[str, str]) -> bool:
+        """
+        为所有角色（主角色+关联角色）创建"角色->印象->事件"结构
+        impression_contents: 字典，键为角色ID，值为该角色对事件的印象内容
+        """
+        # 为主角色创建印象
+        main_char_id = main_character.get("id")
+        if main_char_id in impression_contents:
+            if not self.create_character_event_impression_triple(
+                main_character, 
+                event_data, 
+                impression_contents[main_char_id]
+            ):
+                print(f"警告：主角色 {main_char_id} 的印象创建失败")
+        
+        # 为所有关联角色创建印象
+        for char in related_characters:
+            char_id = char.get("id")
+            if char_id and char_id in impression_contents:
+                if not self.create_character_event_impression_triple(
+                    char, 
+                    event_data, 
+                    impression_contents[char_id]
+                ):
+                    print(f"警告：关联角色 {char_id} 的印象创建失败")
+        
+        return True
 
     def connect_entity_to_event(self, entity_app_id: str, event_app_id: str, relationship_type: str = "RELATED_TO") -> bool:
         """
@@ -395,9 +532,9 @@ class GraphStore:
                 print(f"获取角色 {character_id} 的相关角色失败: {e}")
                 return []
 
-    def get_memories_for_character(self, character_id: str) -> List[Dict[str, Any]]:
+    def get_character_impressions(self, character_id: str) -> List[Dict[str, Any]]:
         """
-        获取与指定角色关联的所有记忆片段（通过印象节点）。
+        获取指定角色的所有印象及其关联的事件。
         """
         with self.driver.session(database=self.database) as session:
             try:
@@ -409,59 +546,91 @@ class GraphStore:
                     char_id=character_id
                 )
 
-                memories = []
+                impressions = []
                 for record in result:
                     impression_node = record["i"]
                     event_node = record["e"]
                     impression_props = dict(impression_node)
                     event_props = dict(event_node)
 
-                    # 合并印象和事件信息作为记忆
-                    memory_props = impression_props.copy()
-                    # event_props 中的字段可能覆盖 impression_props 中的同名字段
-                    memory_props.update(event_props)
-                    # 但保留 impression 的特定属性，如 impression_content
-                    memory_props['original_event_content'] = event_props.get('content', '')
-                    memory_props['character_impression_content'] = impression_props.get('impression_content', impression_props.get('content', ''))
+                    # 合并印象和事件信息
+                    combined = {
+                        "impression": impression_props,
+                        "event": event_props,
+                        "event_app_id": event_props.get("app_id"),
+                        "impression_app_id": impression_props.get("app_id")
+                    }
 
-                    # **关键修改**：如果 properties 是 Base64 字符串，则进行解码
-                    if 'properties' in memory_props and isinstance(memory_props['properties'], str):
-                        try:
-                            decoded_bytes = base64.b64decode(memory_props['properties'])
-                            decoded_str = decoded_bytes.decode('utf-8')
-                            # 将解码后的 JSON 字符串转换回字典
-                            decoded_dict = json.loads(decoded_str)
-                            # 更新 memory_props
-                            memory_props['properties'] = decoded_dict
-                        except (base64.binascii.Error, json.JSONDecodeError, UnicodeDecodeError):
-                            # 如果解码失败，保留原始值
-                            pass
-
-                    for key, value in memory_props.items():
+                    # 解析JSON字段
+                    for key, value in combined["impression"].items():
                         if isinstance(value, str):
                             try:
-                                memory_props[key] = json.loads(value)
+                                combined["impression"][key] = json.loads(value)
                             except (json.JSONDecodeError, TypeError):
                                 pass
-                    memories.append(memory_props)
+                    
+                    for key, value in combined["event"].items():
+                        if isinstance(value, str):
+                            try:
+                                combined["event"][key] = json.loads(value)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
 
-                print(f"--- 获取到 {len(memories)} 条角色 {character_id} 的关联记忆片段 ---")
-                return memories
+                    impressions.append(combined)
+
+                print(f"--- 获取到 {len(impressions)} 条角色 {character_id} 的印象 ---")
+                return impressions
             except Exception as e:
-                print(f"获取角色 {character_id} 的记忆片段失败: {e}")
+                print(f"获取角色 {character_id} 的印象失败: {e}")
+                return []
+
+    def get_event_details(self, event_id: str) -> List[Dict[str, Any]]:
+        """
+        获取事件的所有细节节点（物品、动作、对话等）
+        """
+        with self.driver.session(database=self.database) as session:
+            try:
+                result = session.run(
+                    """
+                    MATCH (e:Event {app_id: $event_id})-[:HAS_DETAIL]->(d)
+                    RETURN d
+                    """,
+                    event_id=event_id
+                )
+
+                details = []
+                for record in result:
+                    detail_node = record["d"]
+                    detail_props = dict(detail_node)
+                    
+                    # 解析JSON字段
+                    for key, value in detail_props.items():
+                        if isinstance(value, str):
+                            try:
+                                detail_props[key] = json.loads(value)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                    
+                    details.append(detail_props)
+
+                print(f"--- 获取到 {len(details)} 个事件 {event_id} 的细节 ---")
+                return details
+            except Exception as e:
+                print(f"获取事件 {event_id} 的细节失败: {e}")
                 return []
 
     def delete_character_graph(self, character_id: str) -> bool:
         """
-        删除指定角色及其关联的图谱数据（印象、事件、关系）。
+        删除指定角色及其关联的图谱数据（印象、关系）。
+        保留事件和细节节点，因为它们可能与其他角色相关。
         """
         with self.driver.session(database=self.database) as session:
             try:
-                # 1. 删除角色 -> 印象 -> 事件 的路径
+                # 1. 删除角色 -> 印象的关系和印象节点
                 session.run(
                     """
-                    MATCH (c:Character {app_id: $char_id})-[r1:HAS_IMPRESSION]->(i:Impression)-[r2:OF_EVENT]->(e:Event)
-                    DELETE r1, r2, i, e
+                    MATCH (c:Character {app_id: $char_id})-[r:HAS_IMPRESSION]->(i:Impression)
+                    DELETE r, i
                     """,
                     char_id=character_id
                 )
@@ -473,23 +642,24 @@ class GraphStore:
                     """,
                     char_id=character_id
                 )
-                print(f"--- 角色 {character_id} 及其关联的印象、事件节点已删除 ---")
+                print(f"--- 角色 {character_id} 及其关联的印象节点已删除 ---")
                 return True
             except Exception as e:
                 print(f"删除角色 {character_id} 的图谱数据失败: {e}")
                 return False
 
-    def update_impression_over_time(self, impression_app_id: str, new_content: str, decay_factor: float = 0.9) -> bool:
+    def update_impression_over_time(self, impression_app_id: str) -> bool:
         """
-        模拟印象随时间变化（淡忘）。
+        模拟印象随时间自然变化（淡忘）。
+        根据当前强度应用不同的衰减因子
         """
         with self.driver.session(database=self.database) as session:
             try:
-                # 获取当前印象内容
+                # 获取当前印象内容和强度
                 result = session.run(
                     """
                     MATCH (i:Impression {app_id: $impression_app_id})
-                    RETURN i.impression_content AS current_content, i.strength AS current_strength
+                    RETURN i.impression_content AS current_content, i.content AS content, i.strength AS current_strength
                     """,
                     impression_app_id=impression_app_id
                 ).single()
@@ -498,23 +668,31 @@ class GraphStore:
                     print(f"错误：未找到印象 ID 为 {impression_app_id} 的节点。")
                     return False
 
-                current_content = result["current_content"] or ""
+                current_content = result["content"] or result["current_content"] or ""
                 current_strength = result["current_strength"] or 100
 
-                # 简单的淡忘逻辑：内容长度按衰减因子减少，强度也减少
-                new_strength = int(current_strength * decay_factor)
-                content_length = len(current_content)
-                new_content_length = max(1, int(content_length * decay_factor)) # 确保内容不为空
-                new_content = current_content[:new_content_length]
+                # 根据当前强度应用不同的衰减因子
+                if current_strength < 30:
+                    decay_factor = 0.8  # 弱记忆衰减更快
+                elif current_strength < 70:
+                    decay_factor = 0.9  # 中等记忆正常衰减
+                else:
+                    decay_factor = 0.95  # 强记忆衰减较慢
+
+                # 计算新的强度和内容
+                new_strength = max(5, int(current_strength * decay_factor))
+                content_length = max(5, int(len(current_content) * decay_factor))
+                new_content = current_content[:content_length] + ("..." if len(current_content) > content_length else "")
 
                 session.run(
                     """
                     MATCH (i:Impression {app_id: $impression_app_id})
-                    SET i.impression_content = $new_content, i.strength = $new_strength
+                    SET i.content = $new_content, i.strength = $new_strength, i.last_updated = $timestamp
                     """,
                     impression_app_id=impression_app_id,
                     new_content=new_content,
-                    new_strength=new_strength
+                    new_strength=new_strength,
+                    timestamp=datetime.now().isoformat()
                 )
                 print(f"--- 印象 {impression_app_id} 已更新 (强度: {new_strength}, 内容长度: {len(new_content)}) ---")
                 return True
@@ -526,9 +704,6 @@ class GraphStore:
     def save_entities_and_relationships_to_csv(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], entities: List[Dict[str, Any]], relationships: List[Dict[str, Any]], memories: List[Dict[str, Any]], character_id: str) -> Dict[str, str]:
         """
         将所有数据（主角色、关联角色、实体、关系、记忆）保存为统一格式的 CSV 文件。
-        修改逻辑以支持新的节点模型，并确保所有属性值都是字符串、数字或布尔值。
-        使用 Base64 编码 properties 字段以避免 CSV 引号问题。
-        修复重复角色节点问题。
         """
         print(f"--- 开始将数据保存为统一格式的 CSV (新模型, 修复类型和引号 - 使用Base64) ---")
         
@@ -536,9 +711,9 @@ class GraphStore:
         relationships_filename = os.path.join(self.temp_csv_dir, f"story_relationships_{character_id}.csv")
         impressions_filename = os.path.join(self.temp_csv_dir, f"story_impressions_{character_id}.csv")
         temporal_chain_filename = os.path.join(self.temp_csv_dir, f"temporal_chain_{character_id}.csv")
+        details_filename = os.path.join(self.temp_csv_dir, f"event_details_{character_id}.csv")
 
-        # **关键修改**：创建一个角色ID映射表，用于去重
-        # 收集所有需要创建的角色ID
+        # 创建一个角色ID映射表，用于去重
         all_character_ids = set()
         all_character_ids.add(main_character.get('id'))
         for rc in related_characters:
@@ -572,14 +747,12 @@ class GraphStore:
             for char_id in all_character_ids:
                 char_data = character_map.get(char_id)
                 if not char_data:
-                    # 如果从记忆中来的参与者ID不在主角色或关联角色中，我们仍然需要创建它
-                    # 为了简化，这里我们假设所有参与者ID都应在 character_map 中
                     continue
 
                 char_node_id = str(uuid.uuid4())
                 char_props = {
                     'node_id': char_node_id,
-                    'label': 'Character', # 统一标签
+                    'label': 'Character',
                     'name': char_data.get('name', ''),
                     'app_id': char_data.get('id', ''),
                     'age': char_data.get('age', ''),
@@ -605,17 +778,14 @@ class GraphStore:
                     'agreeableness': char_data.get('personality', {}).get('agreeableness', ''),
                     'neuroticism': char_data.get('personality', {}).get('neuroticism', ''),
                     'is_protagonist': 'True' if char_id == main_character.get('id') else 'False',
-                    'entity_type': 'Character', # 统一类型
+                    'entity_type': 'Character',
                     'description': char_data.get('background', '')
                 }
                 props_to_exclude = set(fieldnames) - {'node_id', 'label', 'name', 'app_id', 'age', 'gender', 'occupation', 'hobby', 'skill', 'values', 'living_habit', 'dislike', 'language_style', 'appearance', 'family_status', 'education', 'social_pattern', 'favorite_thing', 'usual_place', 'past_experience', 'speech_style', 'openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism', 'is_protagonist', 'entity_type', 'description', 'event_title', 'event_content', 'event_age', 'event_importance', 'properties'}
-                # **关键修改**：将所有动态属性（如 personality）预先转为JSON字符串
                 dynamic_props = {k: v for k, v in char_data.items() if k not in props_to_exclude and k not in char_props}
                 for k, v in dynamic_props.items():
                     if isinstance(v, (dict, list)):
-                        # **关键修改**：使用 json.dumps 确保引号被正确转义
                         dynamic_props[k] = json.dumps(v, ensure_ascii=False)
-                # **关键修改**：将 properties 字段的 JSON 字符串进行 Base64 编码
                 json_str = json.dumps(dynamic_props, ensure_ascii=False)
                 char_props['properties'] = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
                 writer.writerow(char_props)
@@ -624,12 +794,12 @@ class GraphStore:
             event_node_map = {}
             for memory in memories:
                 event_node_id = str(uuid.uuid4())
-                event_node_map[memory.get('id')] = event_node_id # memory id 作为 event id
+                event_node_map[memory.get('id')] = event_node_id
                 event_props = {
                     'node_id': event_node_id,
                     'label': 'Event',
                     'name': memory.get('title', ''),
-                    'app_id': memory.get('id', ''), # memory id
+                    'app_id': memory.get('id', ''),
                     'entity_type': 'Event',
                     'event_title': memory.get('title', ''),
                     'event_content': memory.get('content', ''),
@@ -637,13 +807,10 @@ class GraphStore:
                     'event_importance': memory.get('importance', {}).get('score', ''),
                     'description': memory.get('content', '')[:100]
                 }
-                # **关键修改**：将所有动态属性预先转为JSON字符串
                 dynamic_props_mem = {k: v for k, v in memory.items() if k not in ['title', 'content', 'time', 'importance', 'id', 'app_id', 'node_id', 'label', 'name', 'entity_type', 'event_title', 'event_content', 'event_age', 'event_importance', 'description', 'properties']}
                 for k, v in dynamic_props_mem.items():
                     if isinstance(v, (dict, list)):
-                        # **关键修改**：使用 json.dumps 确保引号被正确转义
                         dynamic_props_mem[k] = json.dumps(v, ensure_ascii=False)
-                # **关键修改**：将 properties 字段的 JSON 字符串进行 Base64 编码
                 json_str_mem = json.dumps(dynamic_props_mem, ensure_ascii=False)
                 event_props['properties'] = base64.b64encode(json_str_mem.encode('utf-8')).decode('utf-8')
                 writer.writerow(event_props)
@@ -661,18 +828,47 @@ class GraphStore:
                     'entity_type': entity.get('type', 'Entity').upper(),
                     'description': entity.get('description', '')
                 }
-                # **关键修改**：将所有动态属性预先转为JSON字符串
                 dynamic_props_ent = entity.get('properties', {})
                 for k, v in dynamic_props_ent.items():
                     if isinstance(v, (dict, list)):
-                        # **关键修改**：使用 json.dumps 确保引号被正确转义
                         dynamic_props_ent[k] = json.dumps(v, ensure_ascii=False)
-                # **关键修改**：将 properties 字段的 JSON 字符串进行 Base64 编码
                 json_str_ent = json.dumps(dynamic_props_ent, ensure_ascii=False)
                 ent_props['properties'] = base64.b64encode(json_str_ent.encode('utf-8')).decode('utf-8')
                 writer.writerow(ent_props)
 
         print(f"--- 节点 CSV 文件已保存至: {nodes_filename} ---")
+
+        # --- 保存事件细节 CSV ---
+        with open(details_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['detail_id', 'event_app_id', 'type', 'content', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for memory in memories:
+                event_app_id = memory.get('id')
+                if not event_app_id:
+                    continue
+                
+                # 提取事件细节（假设在memory的details字段中）
+                details = memory.get('details', [])
+                for detail in details:
+                    detail_id = str(uuid.uuid4())
+                    detail_props = {
+                        'detail_id': detail_id,
+                        'event_app_id': event_app_id,
+                        'type': detail.get('type', 'DETAIL'),
+                        'content': detail.get('content', '')
+                    }
+                    
+                    dynamic_props = {k: v for k, v in detail.items() if k not in ['type', 'content', 'detail_id', 'event_app_id', 'properties']}
+                    for k, v in dynamic_props.items():
+                        if isinstance(v, (dict, list)):
+                            dynamic_props[k] = json.dumps(v, ensure_ascii=False)
+                    json_str = json.dumps(dynamic_props, ensure_ascii=False)
+                    detail_props['properties'] = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+                    writer.writerow(detail_props)
+
+        print(f"--- 事件细节 CSV 文件已保存至: {details_filename} ---")
 
         # --- 保存印象关系 CSV (Character -> Impression -> Event) ---
         with open(impressions_filename, 'w', newline='', encoding='utf-8') as csvfile:
@@ -685,35 +881,32 @@ class GraphStore:
                 if not event_app_id:
                     continue
                 participants = memory.get('participants', [])
-                # 假设 memory 的 content 就是角色对事件的印象
                 impression_content = memory.get('content', '')
                 timestamp = memory.get('time', {}).get('specific', datetime.now().isoformat())
-                # 从 memory 中提取强度或其他 impression 相关信息
                 strength = memory.get('importance', {}).get('score', 50)
 
                 for participant_id in participants:
-                    # 映射 participant_id 到 character_app_id
-                    # 我们直接使用 participant_id 作为 character_app_id
                     char_app_id = participant_id
                     if not char_app_id:
                         continue
 
+                    # 查找角色数据以计算强度
+                    char_data = character_map.get(char_app_id, {})
+                    calculated_strength = self.calculate_impression_strength(char_data, memory)
+                    
                     impression_id = str(uuid.uuid4())
                     impression_props = {
                         'impression_id': impression_id,
                         'character_app_id': char_app_id,
                         'event_app_id': event_app_id,
                         'impression_content': impression_content,
-                        'strength': strength,
+                        'strength': calculated_strength,
                         'timestamp': timestamp,
                     }
-                    # **关键修改**：将所有动态属性预先转为JSON字符串
                     dynamic_props_imp = {k: v for k, v in memory.items() if k not in ['id', 'participants', 'content', 'time', 'importance', 'impression_id', 'character_app_id', 'event_app_id', 'impression_content', 'strength', 'timestamp', 'properties']}
                     for k, v in dynamic_props_imp.items():
                         if isinstance(v, (dict, list)):
-                            # **关键修改**：使用 json.dumps 确保引号被正确转义
                             dynamic_props_imp[k] = json.dumps(v, ensure_ascii=False)
-                    # **关键修改**：将 properties 字段的 JSON 字符串进行 Base64 编码
                     json_str_imp = json.dumps(dynamic_props_imp, ensure_ascii=False)
                     impression_props['properties'] = base64.b64encode(json_str_imp.encode('utf-8')).decode('utf-8')
                     writer.writerow(impression_props)
@@ -730,10 +923,9 @@ class GraphStore:
                 event_app_id = memory.get('id')
                 if not event_app_id:
                     continue
-                # 假设 memory 中的 location, tags 等可以作为实体关联
+                
                 mem_location = memory.get('location')
                 if mem_location:
-                    # 尝试找到对应的实体 app_id
                     location_entity_app_id = None
                     for ent in entities:
                         if ent.get('name') == mem_location:
@@ -747,12 +939,10 @@ class GraphStore:
                             'event_app_id': event_app_id,
                             'relationship_type': 'HAPPENED_AT',
                         }
-                        # **关键修改**：properties 也转为JSON字符串并Base64编码
                         json_str_rel = json.dumps({}, ensure_ascii=False)
                         rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
                         writer.writerow(rel_props)
 
-                # 可以根据 tags, etc. 添加更多实体关系
                 for tag in memory.get('tags', []):
                     tag_entity_app_id = None
                     for ent in entities:
@@ -767,7 +957,6 @@ class GraphStore:
                             'event_app_id': event_app_id,
                             'relationship_type': 'TAGGED_AS',
                         }
-                        # **关键修改**：properties 也转为JSON字符串并Base64编码
                         json_str_rel = json.dumps({}, ensure_ascii=False)
                         rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
                         writer.writerow(rel_props)
@@ -775,7 +964,6 @@ class GraphStore:
         print(f"--- 实体-事件关系 CSV 文件已保存至: {relationships_filename} ---")
 
         # --- 保存时间链 CSV ---
-        # 按时间排序
         sorted_memories = sorted(memories, key=lambda m: (m.get('time', {}).get('age', 0), m.get('time', {}).get('specific', '')))
         with open(temporal_chain_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['current_event_app_id', 'next_event_app_id']
@@ -797,11 +985,12 @@ class GraphStore:
             "nodes_file": os.path.basename(nodes_filename),
             "impressions_file": os.path.basename(impressions_filename),
             "entity_event_relationships_file": os.path.basename(relationships_filename),
-            "temporal_chain_file": os.path.basename(temporal_chain_filename)
+            "temporal_chain_file": os.path.basename(temporal_chain_filename),
+            "details_file": os.path.basename(details_filename)
         }
     # ---
 
-    # --- 从 CSV 导入节点 (不使用 APOC 解码) ---
+    # --- 从 CSV 导入节点 ---
     def import_nodes_from_csv(self, csv_filename: str) -> bool:
         if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
             print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
@@ -812,7 +1001,6 @@ class GraphStore:
 
         with self.driver.session(database=self.database) as session:
             try:
-                # **关键修改**：使用 app_id 作为唯一标识，移除 APOC 解码
                 query = f"""
                 LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
                 CALL (row) {{
@@ -850,7 +1038,7 @@ class GraphStore:
                         event_content: row.event_content,
                         event_age: CASE row.event_age WHEN '' THEN null ELSE toInteger(row.event_age) END,
                         event_importance: CASE row.event_importance WHEN '' THEN null ELSE toInteger(row.event_importance) END,
-                        properties: row.properties // 存储为原始 Base64 字符串
+                        properties: row.properties
                     }}) YIELD node
                     RETURN node
                 }}
@@ -862,7 +1050,6 @@ class GraphStore:
                 return True
             except Exception as e:
                 print(f"从 CSV {csv_filename} 导入节点失败: {e}")
-                # 尝试不使用 APOC 的基础查询
                 try:
                     query_basic_simple = f"""
                     LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
@@ -901,7 +1088,6 @@ class GraphStore:
                             event_content: row.event_content,
                             event_age: CASE row.event_age WHEN '' THEN null ELSE toInteger(row.event_age) END,
                             event_importance: CASE row.event_importance WHEN '' THEN null ELSE toInteger(row.event_importance) END
-                            // 不设置 properties
                         }}) YIELD node
                         RETURN node
                     }}
@@ -916,7 +1102,53 @@ class GraphStore:
                     return False
     # ---
 
-    # --- 从 CSV 导入印象关系 (不使用 APOC 解码) ---
+    # --- 从 CSV 导入事件细节 ---
+    def import_event_details_from_csv(self, csv_filename: str) -> bool:
+        if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
+            print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
+            return False
+
+        print(f"--- 开始从 CSV 文件导入事件细节: {csv_filename} ---")
+        neo4j_import_path = f"/var/lib/neo4j/import/{csv_filename}"
+
+        with self.driver.session(database=self.database) as session:
+            try:
+                # 1. 创建细节节点
+                query_create = f"""
+                LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
+                CALL (row) {{
+                    WITH row
+                    CALL apoc.create.node([row.type], {{
+                        app_id: row.detail_id,
+                        content: row.content,
+                        event_app_id: row.event_app_id,
+                        properties: row.properties
+                    }}) YIELD node
+                    RETURN node
+                }}
+                RETURN count(node) AS createdDetails;
+                """
+                result_create = session.run(query_create)
+                count_create = result_create.single()["createdDetails"]
+                print(f"--- 成功创建 {count_create} 个事件细节节点 ---")
+
+                # 2. 连接事件到细节
+                query_connect = f"""
+                LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
+                MATCH (e:Event {{app_id: row.event_app_id}}), (d) WHERE d.app_id = row.detail_id
+                CALL apoc.create.relationship(e, 'HAS_DETAIL', {{}}, d) YIELD rel
+                RETURN count(rel) AS connectedDetails;
+                """
+                result_connect = session.run(query_connect)
+                count_connect = result_connect.single()["connectedDetails"]
+                print(f"--- 成功连接 {count_connect} 条事件-细节关系 ---")
+                return True
+            except Exception as e:
+                print(f"从 CSV {csv_filename} 导入事件细节失败: {e}")
+                return False
+    # ---
+
+    # --- 从 CSV 导入印象关系 ---
     def import_impressions_from_csv(self, csv_filename: str) -> bool:
         if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
             print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
@@ -927,7 +1159,7 @@ class GraphStore:
 
         with self.driver.session(database=self.database) as session:
             try:
-                # 1. 创建印象节点 (properties 作为字符串，不进行解码)
+                # 1. 创建印象节点
                 query_create = f"""
                 LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
                 CALL (row) {{
@@ -937,7 +1169,7 @@ class GraphStore:
                         impression_content: row.impression_content,
                         strength: toInteger(row.strength),
                         timestamp: row.timestamp,
-                        properties: row.properties // 存储为原始 Base64 字符串
+                        properties: row.properties
                     }}) YIELD node
                     RETURN node
                 }}
@@ -976,7 +1208,6 @@ class GraphStore:
 
         with self.driver.session(database=self.database) as session:
             try:
-                # **关键修改**：不再尝试解码 properties，直接存储 Base64 字符串
                 query = f"""
                 LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
                 MATCH (ent) WHERE ent.app_id = row.entity_app_id

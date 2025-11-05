@@ -1,0 +1,12 @@
+[main ee9dd6a] 修改节点和关系存储逻辑，加入角色-
+ 15 files changed, 1562 insertions(+), 1115 deletions(-)
+ create mode 100644 generated_stories/8fb0e022-0616-4a71-8970-05ea0de078a9_extracted_entities_and_relationships_new_model.txt
+ create mode 100644 generated_stories/8fb0e022-0616-4a71-8970-05ea0de078a9_lifespan_story_chaptered.txt
+ create mode 100644 generated_stories/8fb0e022-0616-4a71-8970-05ea0de078a9_story_chapter_0_2.txt
+ create mode 100644 generated_stories/8fb0e022-0616-4a71-8970-05ea0de078a9_story_chapter_12_17.txt
+ create mode 100644 generated_stories/8fb0e022-0616-4a71-8970-05ea0de078a9_story_chapter_3_11.txt
+ delete mode 100644 generated_stories/fad0e222-f14c-4cf6-a7db-287843eb0a3e_extracted_entities_and_relationships.txt
+ delete mode 100644 generated_stories/fad0e222-f14c-4cf6-a7db-287843eb0a3e_lifespan_story_chaptered.txt
+ delete mode 100644 generated_stories/fad0e222-f14c-4cf6-a7db-287843eb0a3e_story_chapter_0_2.txt
+ delete mode 100644 generated_stories/fad0e222-f14c-4cf6-a7db-287843eb0a3e_story_chapter_12_17.txt
+ delete mode 100644 generated_stories/fad0e222-f14c-4cf6-a7db-287843eb0a3e_story_chapter_3_11.txt
