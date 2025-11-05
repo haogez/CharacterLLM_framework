@@ -1,74 +1,125 @@
 """
 角色生成器模块
-
-提供基于大语言模型的角色生成功能，支持从自然语言描述生成结构化角色数据。
 """
 
 import json
 import os
-import asyncio # 1. 添加 asyncio 导入
+import asyncio
+import uuid
 from typing import Dict, List, Any, Optional, Tuple
 
 from app.core.llm.openai_client import CharacterLLM, OpenAIClient
 
 class CharacterGenerator:
-    """
-    角色生成器类
-    
-    提供基于大语言模型的角色生成功能，支持从自然语言描述生成结构化角色数据
-    """
-    
     def __init__(self, character_llm: Optional[CharacterLLM] = None):
-        """
-        初始化角色生成器
-        
-        Args:
-            character_llm: 角色LLM客户端，如果为None则创建新实例
-        """
         self.character_llm = character_llm or CharacterLLM()
     
-    # 2. 修改：generate_character 方法改为 async
     async def generate_character(self, description: str) -> Dict[str, Any]:
-        """
-        从自然语言描述生成角色
-        
-        Args:
-            description: 角色描述
-            
-        Returns:
-            角色数据字典
-        """
-        # 3. 修改：await 调用 LLM 异步方法
         character_data = await self.character_llm.generate_character(description)
-        
-        # 确保生成的角色数据包含必要的字段
         self._validate_and_fix_character_data(character_data)
-        
         return character_data
-    
-    # 4. 修改：generate_memories 方法改为 async
-    async def generate_memories(self, character_data: Dict[str, Any], count: int = 10) -> List[Dict[str, Any]]:
+
+    async def generate_related_characters(self, main_character: Dict[str, Any], count: int = 5) -> List[Dict[str, Any]]:
         """
-        为角色生成记忆
+        为角色生成关联角色，限定在主角色当前人生阶段。
+        例如，如果主角色是17岁高中生，生成的同学、老师、家人、朋友等。
+        """
+        print(f"开始为 {main_character.get('name')} (当前年龄: {main_character.get('age')}岁, 职业: {main_character.get('occupation')}) 生成 {count} 个关联角色...")
         
-        Args:
-            character_data: 角色数据
-            count: 生成的记忆数量
+        # --- 构建更精确的生成提示 ---
+        # 根据主角色的年龄和职业推断可能接触的角色类型
+        age = main_character.get('age', 0)
+        occupation = main_character.get('occupation', '未知')
+        
+        if age < 18 and '学生' in occupation:
+            possible_roles = ["同班同学", "其他年级同学", "老师", "室友", "朋友", "家人", "邻居", "校医", "保安", "食堂工作人员"]
+        elif age >= 18 and age < 25 and '学生' in occupation:
+            possible_roles = ["同学", "室友", "教授", "导师", "朋友", "家人", "邻居", "同学的朋友", "社团成员", "兼职同事"]
+        elif age >= 25 and age < 65:
+            possible_roles = ["同事", "上司", "下属", "客户", "朋友", "家人", "邻居", "配偶", "孩子", "医生", "邻居"]
+        else:
+            possible_roles = ["家人", "邻居", "朋友", "社区成员", "志愿者", "医生", "护工"]
+        
+        # 确保不会生成未来角色的提示词
+        forbidden_roles = ["未来的配偶", "未来的同事", "未来的同学", "未来的老师", "未来的朋友", "未来的孩子"]
+        
+        related_characters = []
+        for i in range(count):
+            # 为每次生成提供不同的角色类型提示，增加多样性
+            role_hint = possible_roles[i % len(possible_roles)] if possible_roles else "熟悉的人"
             
-        Returns:
-            记忆数据列表
-        """
-        # 记忆类型及其分配比例
+            # 构建角色描述提示
+            related_desc = f"""
+            与{main_character.get('name')}相关的角色，必须是{main_character.get('name')}在当前人生阶段（{age}岁，{occupation}）可能认识、接触或了解的人。
+            角色类型：{role_hint}。
+            例如：如果{main_character.get('name')}是高中生，这个角色可能是{role_hint}，{main_character.get('name')}在学校、家庭或社区中与之有过互动或至少认识。
+            重要：不要生成{main_character.get('name')}未来才会遇到的角色，如{', '.join(forbidden_roles)}。
+            请生成这个角色的详细信息。
+            """
+            
+            try:
+                related_char = await self.character_llm.generate_character(related_desc)
+                related_char["id"] = related_char.get("id") or str(uuid.uuid4())
+                related_characters.append(related_char)
+                print(f"  - 生成关联角色 {i+1}/{count}: {related_char.get('name')} ({related_char.get('occupation')})")
+            except Exception as e:
+                print(f"  - 生成关联角色 {i+1} 失败: {e}")
+                # 如果生成失败，可以创建一个基础的关联角色
+                fallback_char = {
+                    "id": str(uuid.uuid4()),
+                    "name": f"关联角色_{i+1}",
+                    "age": age - 5 if age > 5 else 25, # 简单估算一个可能的年龄
+                    "gender": "未知",
+                    "occupation": "未知",
+                    "hobby": "未知",
+                    "skill": "未知",
+                    "values": "未知",
+                    "living_habit": "未知",
+                    "dislike": "未知",
+                    "language_style": "未知",
+                    "appearance": "未知",
+                    "family_status": "未知",
+                    "education": "未知",
+                    "social_pattern": "未知",
+                    "favorite_thing": "未知",
+                    "usual_place": "未知",
+                    "past_experience": "未知",
+                    "speech_style": "未知",
+                    "personality": {"openness": 50, "conscientiousness": 50, "extraversion": 50, "agreeableness": 50, "neuroticism": 50},
+                    "background": f"一个与 {main_character.get('name')} 在当前阶段相关的角色，具体信息待完善。"
+                }
+                related_characters.append(fallback_char)
+        
+        print(f"为 {main_character.get('name')} 生成了 {len(related_characters)} 个关联角色")
+        return related_characters
+
+    async def generate_relationships(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        print(f"开始为 {main_character.get('name')} 与 {len(related_characters)} 个关联角色生成关系...")
+        relationships = []
+        for related_char in related_characters:
+            relationship_id = str(uuid.uuid4())
+            relationships.append({
+                "relationship_id": relationship_id,
+                "character1_id": main_character.get("id"),
+                "character2_id": related_char.get("id"),
+                "relationship_type": "朋友",
+                "description": f"{main_character.get('name')} 与 {related_char.get('name')} 之间的关系描述",
+                "strength": 50,
+                "history": f"{main_character.get('name')} 与 {related_char.get('name')} 的关系历史"
+            })
+        print(f"生成了 {len(relationships)} 条关系")
+        return relationships
+
+    async def generate_memories(self, character_data: Dict[str, Any], count: int = 10) -> List[Dict[str, Any]]:
         memory_types = {
-            "education": 0.2,  # 教育经历
-            "work": 0.3,       # 工作经历
-            "family": 0.2,     # 家庭生活
-            "hobby": 0.1,      # 兴趣爱好
-            "trauma": 0.1,     # 创伤经历
-            "achievement": 0.1 # 成就
+            "education": 0.2,
+            "work": 0.3,
+            "family": 0.2,
+            "hobby": 0.1,
+            "trauma": 0.1,
+            "achievement": 0.1
         }
         
-        # 根据比例计算每种类型的记忆数量
         type_counts = {}
         remaining = count
         for memory_type, ratio in memory_types.items():
@@ -80,36 +131,24 @@ class CharacterGenerator:
                 type_counts[memory_type] = remaining
                 remaining = 0
         
-        # 如果还有剩余，分配给工作经历
         if remaining > 0:
             type_counts["work"] += remaining
         
-        # 生成各类型记忆
         all_memories = []
         for memory_type, type_count in type_counts.items():
             for _ in range(type_count):
-                # 5. 修改：await 调用 LLM 异步方法
                 memory = await self.character_llm.generate_memory(character_data, memory_type)
-                # 确保记忆类型字段存在
                 memory["type"] = memory_type
                 all_memories.append(memory)
         
         return all_memories
     
     def _validate_and_fix_character_data(self, character_data: Dict[str, Any]) -> None:
-        """
-        验证并修复角色数据
-        
-        Args:
-            character_data: 角色数据
-        """
-        # 确保基本字段存在
         if "name" not in character_data:
             character_data["name"] = "Unknown name"
         if "age" not in character_data:
-            character_data["age"] = 30  # 默认年龄为整数
+            character_data["age"] = 30
         elif isinstance(character_data["age"], str):
-            # 如果age是字符串，尝试转换为整数
             try:
                 character_data["age"] = int(character_data["age"])
             except ValueError:
@@ -121,7 +160,6 @@ class CharacterGenerator:
         if "background" not in character_data:
             character_data["background"] = "Unknown background"
         
-        # 确保人格特征存在
         if "personality" not in character_data:
             character_data["personality"] = {
                 "openness": 50,
@@ -131,42 +169,10 @@ class CharacterGenerator:
                 "neuroticism": 50
             }
         else:
-            # 确保OCEAN五维特征完整
             ocean_traits = ["openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"]
             for trait in ocean_traits:
                 if trait not in character_data["personality"]:
                     character_data["personality"][trait] = 50
         
-        # 确保语言风格字段存在
         if "speech_style" not in character_data:
             character_data["speech_style"] = "Neutral and standard speech pattern."
-
-
-# 测试代码
-if __name__ == "__main__":
-    # Note: The synchronous test script needs to be adapted to use async/await
-    # Example using asyncio.run:
-    # import asyncio
-    # async def test():
-    #     api_key = os.environ.get("OPENAI_API_KEY")
-    #     if not api_key:
-    #         print("请设置OPENAI_API_KEY环境变量")
-    #         return
-    #     character_generator = CharacterGenerator()
-    #     description = "一位生活在90年代上海的退休语文教师，性格温和，喜欢读书写字"
-    #     print(f"生成角色: {description}")
-    #     character = await character_generator.generate_character(description)
-    #     print("\n生成的角色:")
-    #     print(json.dumps(character, ensure_ascii=False, indent=2))
-    #     print("\n生成角色记忆...")
-    #     memories = await character_generator.generate_memories(character, count=5)
-    #     print("\n生成的记忆:")
-    #     for i, memory in enumerate(memories, 1):
-    #         print(f"\n记忆 {i} [{memory['type']}]:")
-    #         print(f"标题: {memory.get('title', 'Unknown')}")
-    #         print(f"内容: {memory.get('content', 'Unknown')}")
-    #         print(f"时间: {memory.get('time', 'Unknown')}")
-    #         print(f"情感: {memory.get('emotion', 'neutral')}")
-    #         print(f"重要性: {memory.get('importance', 5)}/10")
-    # asyncio.run(test())
-    print("CharacterGenerator 模块已加载，方法已异步化。")

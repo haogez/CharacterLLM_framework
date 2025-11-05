@@ -11,6 +11,8 @@ import uuid
 from typing import Dict, List, Any, Optional, Tuple
 from app.core.llm.openai_client import CharacterLLM
 from app.core.character.generator import CharacterGenerator # 导入现有的角色生成器
+from app.core.utils.log_utils import log_info, log_success
+
 
 
 class RelationshipGenerator:
@@ -190,7 +192,7 @@ class RelationshipGenerator:
         return "other"
 
 
-    async def generate_memories_for_relationship(self, main_character: Dict[str, Any], related_character: Optional[Dict[str, Any]], relationship_type: str) -> List[Dict[str, Any]]:
+    async def generate_memories_for_relationship(self, main_character: Dict[str, Any], related_character: Optional[Dict[str, Any]], relationship_type: str, count: int = 2) -> List[Dict[str, Any]]:
         """
         为特定关系（包括自关系）生成记忆。
 
@@ -198,11 +200,12 @@ class RelationshipGenerator:
             main_character (Dict[str, Any]): 主角色数据
             related_character (Optional[Dict[str, Any]]): 关联角色数据，如果为自关系则为None
             relationship_type (str): 关系类型
+            count (int): 生成记忆的数量
 
         Returns:
             List[Dict[str, Any]]: 生成的记忆列表
         """
-        log_info(f"为 {relationship_type} 关系生成记忆") # 使用新的日志工具函数
+        log_info(f"为 {relationship_type} 关系生成 {count} 条记忆") # 更新日志信息
 
         # 根据关系类型调整Prompt，引导LLM生成相关记忆
         context_desc = ""
@@ -227,7 +230,7 @@ class RelationshipGenerator:
         instruction = type_specific_instruction.get(relationship_type, f"生成与'{relationship_type}'类型的记忆。")
 
         system_prompt = f"""
-        你是"{main_character.get('name')}"的记忆塑造师。请生成一段符合'{relationship_type}'类型的深刻记忆。
+        你是"{main_character.get('name')}"的记忆塑造师。请生成{count}段符合'{relationship_type}'类型的深刻记忆。
 
         角色背景：{main_character.get('background')}
         相关背景：{context_desc}
@@ -248,33 +251,29 @@ class RelationshipGenerator:
             "trigger_system": {{ "sensory": [...], "contextual": [...], "emotional": [...] }},
             "memory_distortion": {{ "exaggerated": "...", "downplayed": "...", "reason": "..." }}
           }},
-          // ... 更多记忆对象
+          // ... 更多记忆对象 (总共 {count} 个)
         ]
         请勿在外层添加其他字段（如 {{ "memories": [...] }}）。
         """
 
         # 让LLM一次性生成多条记忆
-        user_prompt = f"请生成2-3段关于'{relationship_type}'类型的详细记忆："
+        user_prompt = f"请生成{count}段关于'{relationship_type}'类型的详细记忆："
 
         # 调用LLM生成结构化记忆
         result = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
         print(f"--- LLM 返回的原始结果类型: {type(result)} ---")
-        print(f"--- LLM 返回的原始结果内容 (前200字符): {str(result)[:200]}{'...' if len(str(result)) > 200 else ''} ---") # 简化打印
+        print(f"--- LLM 返回的原始结果内容 (前200字符): {str(result)[:200]}{'...' if len(str(result)) > 200 else ''} ---")
 
         # --- 修改：处理 result 可能是列表或字典的情况 ---
         if isinstance(result, list):
-            # LLM 直接返回了记忆列表
             print("--- LLM 直接返回了记忆列表 ---")
             raw_generated_memories = result
         elif isinstance(result, dict):
-            # LLM 返回了包含 memories 字段的对象
             print("--- LLM 返回了包含 memories 字段的对象 ---")
             raw_generated_memories = result.get("memories", [])
         else:
-            # LLM 返回了非预期格式，可能包含错误
             print(f"--- 警告：LLM 返回了非预期格式: {type(result)} ---")
             print(f"--- 返回内容 (前200字符): {str(result)[:200]}{'...' if len(str(result)) > 200 else ''} ---")
-            # 如果 result 包含 'text' 和 'error'，说明解析失败
             if isinstance(result, dict) and 'error' in result:
                  print(f"--- LLM 解析错误: {result.get('error')} ---")
             raw_generated_memories = []
@@ -287,45 +286,44 @@ class RelationshipGenerator:
                 print(f"--- 跳过非字典格式的记忆: {raw_mem} ---")
                 continue
 
-            # 创建符合完整记忆格式的字典
             processed_mem = {
                 "title": raw_mem.get("title", f"关于 {relationship_type} 的记忆"),
-                "content": raw_mem.get("content", raw_mem.get("内容", "")), # 尝试匹配 LLM 返回的中文键
+                "content": raw_mem.get("content", raw_mem.get("内容", "")),
                 "time": raw_mem.get("time", {
                     "age": main_character.get("age", 30),
-                    "period": raw_mem.get("时间", raw_mem.get("period", "未知")), # 尝试匹配 LLM 返回的中文键
+                    "period": raw_mem.get("时间", raw_mem.get("period", "未知")),
                     "specific": raw_mem.get("specific", "未知")
                 }),
                 "emotion": raw_mem.get("emotion", {
                     "immediate": [],
                     "reflected": [],
-                    "residual": raw_mem.get("情感", raw_mem.get("residual", "")), # 尝试匹配 LLM 返回的中文键
+                    "residual": raw_mem.get("情感", raw_mem.get("residual", "")),
                     "intensity": 5
                 }),
                 "importance": raw_mem.get("importance", {
                     "score": 5,
-                    "reason": raw_mem.get("重要性", raw_mem.get("reason", "")), # 尝试匹配 LLM 返回的中文键
+                    "reason": raw_mem.get("重要性", raw_mem.get("reason", "")),
                     "frequency": "偶尔想起"
                 }),
                 "behavior_impact": raw_mem.get("behavior_impact", {
-                    "habit_formed": raw_mem.get("行为影响", raw_mem.get("habit_formed", "")), # 尝试匹配 LLM 返回的中文键
+                    "habit_formed": raw_mem.get("行为影响", raw_mem.get("habit_formed", "")),
                     "attitude_change": raw_mem.get("attitude_change", ""),
                     "response_pattern": raw_mem.get("response_pattern", "")
                 }),
                 "trigger_system": raw_mem.get("trigger_system", {
                     "sensory": [],
-                    "contextual": [raw_mem.get("触发系统", "")], # 尝试匹配 LLM 返回的中文键
+                    "contextual": [raw_mem.get("触发系统", "")],
                     "emotional": []
                 }),
                 "memory_distortion": raw_mem.get("memory_distortion", {
-                    "exaggerated": raw_mem.get("记忆扭曲", raw_mem.get("exaggerated", "")), # 尝试匹配 LLM 返回的中文键
+                    "exaggerated": raw_mem.get("记忆扭曲", raw_mem.get("exaggerated", "")),
                     "downplayed": raw_mem.get("downplayed", ""),
                     "reason": raw_mem.get("reason", "")
                 })
             }
-            # 确保为记忆添加ID
             processed_mem["id"] = str(uuid.uuid4())
+            processed_mem["type"] = relationship_type
             generated_memories.append(processed_mem)
-        
-        log_success(f"为 {relationship_type} 关系生成了 {len(generated_memories)} 条记忆") # 使用新的日志工具函数
+
+        log_success(f"为 {relationship_type} 关系生成了 {len(generated_memories)} 条记忆") # 更新日志信息
         return generated_memories

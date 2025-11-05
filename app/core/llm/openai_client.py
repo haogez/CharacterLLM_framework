@@ -1,52 +1,30 @@
 """
 OpenAI API客户端封装模块
-
-提供与OpenAI API交互的封装类，支持角色生成、记忆生成和对话生成等功能。
-支持智增增平台API代理。
 """
 
 import os
 import json
 from typing import Dict, List, Any, Optional, Union
 import asyncio
-
-# 1. 修改：导入 AsyncOpenAI
 from openai import AsyncOpenAI
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage, AIMessage
 
 class OpenAIClient:
-    """
-    OpenAI API客户端封装类
-    
-    提供对OpenAI API的封装，支持直接调用和通过LangChain调用两种方式
-    支持智增增平台API代理
-    """
-    
     def __init__(self, 
                 api_key: Optional[str] = None, 
                 model: str = "gpt-4.1-mini", 
                 base_url: Optional[str] = None):
-        """
-        初始化OpenAI客户端
-        
-        Args:
-            api_key: OpenAI API密钥，如果为None则从环境变量获取
-            model: 使用的模型名称，默认为gpt-4.1-mini（智增增平台）
-            base_url: API基础URL，用于支持智增增等代理平台，如果为None则从环境变量获取
-        """
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
         self.model = os.environ.get("OPENAI_MODEL", model)
         
-        # 2. 修改：初始化 AsyncOpenAI 客户端
         client_kwargs = {"api_key": self.api_key}
         if self.base_url:
             client_kwargs["base_url"] = self.base_url
         
         self.client = AsyncOpenAI(**client_kwargs)
         
-        # LangChain客户端
         langchain_kwargs = {
             "model": model,
             "temperature": 0.7,
@@ -57,20 +35,8 @@ class OpenAIClient:
         
         self.chat_model = ChatOpenAI(**langchain_kwargs)
     
-    # 3. 修改：generate_response 方法改为 async
     async def generate_response(self, system_prompt: str, user_prompt: str) -> str:
-        """
-        生成响应（使用异步客户端）
-        
-        Args:
-            system_prompt: 系统提示
-            user_prompt: 用户提示
-            
-        Returns:
-            生成的响应文本
-        """
         try:
-            # 4. 修改：使用 await 调用异步API
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -90,32 +56,16 @@ class OpenAIClient:
             
         except Exception as e:
             print(f"OpenAI API调用失败: {e}")
-            print(f"Model: {self.model}")
-            print(f"Base URL: {self.base_url}")
             raise
     
-    # 5. 修改：generate_structured_response 方法改为 async
     async def generate_structured_response(self, system_prompt: str, user_prompt: str) -> Dict[str, Any]:
-        """
-        生成结构化JSON响应
-        
-        Args:
-            system_prompt: 系统提示
-            user_prompt: 用户提示
-            
-        Returns:
-            解析后的JSON对象
-        """
         enhanced_system_prompt = f"{system_prompt}\n\n你必须以有效的JSON格式响应。"
         
-        # 6. 修改：await 调用异步 generate_response
         response_text = await self.generate_response(enhanced_system_prompt, user_prompt)
         
-        # --- 优化：只打印响应的前 500 个字符 ---
         print(f"=== LLM 原始响应 (前500字符) ===")
         print(response_text[:500] if len(response_text) > 500 else response_text)
         print(f"=== 响应长度: {len(response_text)} ===")
-        # ---
         
         try:
             parsed = json.loads(response_text)
@@ -142,30 +92,10 @@ class OpenAIClient:
                 return {"text": response_text, "error": str(e)}
     
     def langchain_generate(self, messages: List[Union[SystemMessage, HumanMessage, AIMessage]]) -> str:
-        """
-        使用LangChain生成响应
-        
-        Args:
-            messages: LangChain消息列表
-            
-        Returns:
-            生成的响应文本
-        """
         response = self.chat_model.generate([messages])
         return response.generations[0][0].text
     
-    # 7. 修改：create_embeddings 方法改为 async
     async def create_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """
-        创建文本嵌入向量
-        
-        Args:
-            texts: 要嵌入的文本列表
-            
-        Returns:
-            嵌入向量列表
-        """
-        # 8. 修改：使用 await 调用异步API
         response = await self.client.embeddings.create(
             model="text-embedding-3-large",
             input=texts
@@ -174,27 +104,10 @@ class OpenAIClient:
 
 
 class CharacterLLM:
-    """
-    角色化大语言模型客户端
-    
-    提供针对角色生成、记忆生成和对话生成的专用方法
-    """
-    
     def __init__(self, openai_client: Optional[OpenAIClient] = None):
-        """
-        初始化角色化LLM客户端
-        
-        Args:
-            openai_client: OpenAI客户端实例，如果为None则创建新实例
-        """
         self.client = openai_client or OpenAIClient()
     
-    # 9. 修改：generate_character 方法改为 async
     async def generate_character(self, description: str) -> Dict[str, Any]:
-        """
-        一句话生成18维度立体角色：用户提示严格优先，自动衍生合理细节
-        核心逻辑：用户明确设定的属性>其他衍生维度，确保角色符合用户预期
-        """
         system_prompt = """
         你是“用户驱动型角色生成专家”，需严格遵循以下逻辑生成角色：
         1. 优先提取用户描述中的**明确设定**（如“阴暗的宝妈”“讨厌小孩的老师”），这些设定必须100%保留，不得被常识覆盖；
@@ -434,22 +347,10 @@ class CharacterLLM:
         
         user_prompt = f"基于这句话生成全面角色（用户设定优先）：{description}"
         
-        # 10. 修改：await 调用异步 generate_structured_response
         return await self.client.generate_structured_response(system_prompt, user_prompt)
 
     
-    # 11. 修改：generate_memory 方法改为 async
     async def generate_memory(self, character_data: Dict[str, Any], memory_type: str) -> Dict[str, Any]:
-        """
-        生成与角色深度绑定的多维度记忆，支撑角色行为逻辑与情感反应
-        
-        Args:
-            character_data: 角色18维度完整数据
-            memory_type: 记忆类型（education, work, family, hobby, trauma, achievement, social, growth）
-            
-        Returns:
-            包含多维度细节的记忆数据字典
-        """
         core_connections = {
             "personality_markers": [
                 f"开放性{character_data['personality']['openness']}分：{'乐于尝试新事物' if character_data['personality']['openness']>60 else '偏好稳定熟悉的环境'}",
@@ -577,21 +478,13 @@ class CharacterLLM:
         请确保记忆与上述特征形成有机整体，而非孤立事件。
         """
         
-        # 12. 修改：await 调用异步 generate_structured_response
         return await self.client.generate_structured_response(system_prompt, user_prompt)
     
 
-    # 13. 修改：generate_quick_response 方法改为 async
     async def generate_quick_response(self,
                                 character_data: Dict[str, Any],
                                 user_input: str,
                                 conversation_history: List[Dict[str, str]] = None) -> str:
-        """
-        生成快速响应（第一阶段）
-        当检测到用户输入可能触及需要记忆的内容时，先给出简短响应
-        为记忆检索争取时间，确保对话流畅性
-        """
-        # 14. 修改：使用更简化的Prompt
         simplified_system_prompt = f"""
         你是 {character_data.get('name', '角色')}。
         你的说话风格是：{character_data.get('language_style', '自然流畅')}。
@@ -600,7 +493,6 @@ class CharacterLLM:
         不要提供具体细节，只是快速反应。
         """
         
-        # 构建对话上下文（只取最近1轮确保快速处理）
         context = ""
         if conversation_history and len(conversation_history) >= 1:
             last_exchange = conversation_history[-1]
@@ -608,20 +500,13 @@ class CharacterLLM:
         
         user_prompt = f"{context}用户当前输入：{user_input}\n你的非常简短的回应："
         
-        # 15. 修改：await 调用异步 generate_response
         return await self.client.generate_response(simplified_system_prompt, user_prompt)
     
-    # 16. 修改：generate_dialogue_response 方法改为 async
     async def generate_dialogue_response(self, 
                                   character_data: Dict[str, Any], 
                                   user_input: str, 
                                   conversation_history: List[Dict[str, str]] = None,
                                   relevant_memories: List[Dict[str, Any]] = None) -> str:
-        """
-        生成补充响应（第三阶段）
-        基于检索到的记忆和完整人设，补充快速响应的内容
-        形成完整、有深度且符合角色的回答
-        """
         key_elements = {
             "identity": {
                 "name": character_data.get('name'),
@@ -697,26 +582,4 @@ class CharacterLLM:
         
         user_prompt = f"{history_context}\n{memories_context}\n用户当前输入：{user_input}\n\n请生成补充响应，完成角色的完整回答："
         
-        # 17. 修改：await 调用异步 generate_response
         return await self.client.generate_response(system_prompt, user_prompt)
-    
-
-if __name__ == "__main__":
-    api_key = os.environ.get("OPENAI_API_KEY")
-    base_url = os.environ.get("OPENAI_BASE_URL")
-    
-    if not api_key:
-        print("请设置OPENAI_API_KEY环境变量")
-        exit(1)
-    
-    character_llm = CharacterLLM(OpenAIClient(api_key=api_key, base_url=base_url))
-    
-    # Note: These calls now need to be awaited in an async context
-    # asyncio.run(...) or within an async function
-    # Example:
-    # async def test():
-    #     character = await character_llm.generate_character("...")
-    #     memory = await character_llm.generate_memory(character, "education")
-    #     response = await character_llm.generate_dialogue_response(...)
-    # test()
-    print("OpenAI客户端模块已加载，方法已异步化。")
