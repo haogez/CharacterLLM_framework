@@ -11,6 +11,7 @@ import uuid
 import os
 import time
 import random
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from app.core.llm.openai_client import CharacterLLM
 from app.core.utils.log_utils import log_info, log_success, log_warning, log_error, log_debug
@@ -308,8 +309,12 @@ class StoryBasedMemoryGenerator:
         return full_story
 
     async def extract_memories_from_lifespan_story(self, story_text: str, character_data: Dict[str, Any], related_characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        log_info(f"开始从故事中提取记忆片段...")
+        log_info(f"开始从故事中提取记忆片段 (新模型)...")
         start_time = time.time()
+
+        # 获取所有角色ID列表，用于验证参与者
+        all_char_ids = {character_data['id']: character_data['name']}
+        all_char_ids.update({rc['id']: rc['name'] for rc in related_characters})
 
         system_prompt = f"""
         你是记忆考古学家，任务是仔细阅读以下关于"{character_data.get('name')}"的故事，并将故事中发生的每一个可记忆的事件、场景、对话、情绪、感觉、思考、行为等都识别出来，转换成详细的、结构化的记忆条目。
@@ -317,7 +322,7 @@ class StoryBasedMemoryGenerator:
         记忆条目格式要求（JSON数组）：
         [
           {{
-            "id": "唯一ID",
+            "id": "唯一ID (作为事件的ID)",
             "title": "记忆标题（10-15字，包含核心意象）",
             "content": "记忆片段的详细描述（从故事中提取的原文或概括）",
             "time": {{
@@ -353,7 +358,7 @@ class StoryBasedMemoryGenerator:
             }},
             "type": "scene", // 新增：记忆类型 (scene, dialogue, emotion, thought, behavior, sensation)
             "location": "学校操场", // 新增：地点
-            "participants": ["[主角色ID]", "[关联角色ID1]"], // 新增：涉及的角色ID列表
+            "participants": ["[主角色ID]", "[关联角色ID1]"], // 新增：涉及的角色ID列表 (必须是故事中实际提到的角色)
             "tags": ["友谊", "美好回忆"], // 新增：标签列表
             "duration": "几分钟", // 新增：事件持续时间
             "context_before": "...", // 新增：片段前的上下文
@@ -364,10 +369,10 @@ class StoryBasedMemoryGenerator:
 
         **重要**:
         - 每个记忆条目都必须包含所有字段，即使某些字段没有明确信息也需用空字符串或默认值填充。
-        - "participants" 字段应包含所有在此记忆片段中出现的角色的ID（从 character_data 和 related_characters 中获取）。
+        - "participants" 字段应包含所有在此记忆片段中出现的角色的ID（从 character_data 和 related_characters 中获取）。请严格检查，确保ID存在于角色列表中。
         - "type", "location", "tags", "duration", "context_before", "context_after" 是新增的细粒度属性。
         - 请直接返回JSON数组，不要添加其他解释文字。
-        - **特别注意**：请确保提取的 "time.age" 字段准确反映事件发生时主角色的年龄。请确保 "participants" 列表包含事件中涉及的所有角色ID。
+        - **特别注意**：请确保提取的 "time.age" 字段准确反映事件发生时主角色的年龄。请确保 "participants" 列表包含事件中涉及的所有角色ID，且这些ID必须在提供的角色列表中。
         """
 
         user_prompt = f"""
@@ -396,13 +401,17 @@ class StoryBasedMemoryGenerator:
                 processed_mem = raw_mem.copy()
                 processed_mem["id"] = memory_id
 
+                # 验证并过滤参与者
                 participants = processed_mem.get("participants", [])
                 if not isinstance(participants, list):
                     participants = [participants] if participants else []
-                main_char_id = character_data.get("id")
-                if main_char_id and main_char_id not in participants:
-                    participants.append(main_char_id)
-                processed_mem["participants"] = participants
+                # 只保留存在于 all_char_ids 中的ID
+                filtered_participants = [pid for pid in participants if pid in all_char_ids]
+                processed_mem["participants"] = filtered_participants
+
+                # 如果没有参与者，至少包含主角色
+                if not processed_mem["participants"]:
+                    processed_mem["participants"] = [character_data.get("id")]
 
                 tags = processed_mem.get("tags", [])
                 if not isinstance(tags, list):
@@ -410,117 +419,107 @@ class StoryBasedMemoryGenerator:
 
                 extracted_memories.append(processed_mem)
 
-            log_success(f"从故事中提取了 {len(extracted_memories)} 条记忆片段")
+            log_success(f"从故事中提取了 {len(extracted_memories)} 条记忆片段 (新模型)")
             log_info(f"提取记忆片段耗时: {time.time() - start_time:.2f} 秒")
             return extracted_memories
 
         except Exception as e:
-            log_error(f"从故事中提取记忆片段失败: {e}")
+            log_error(f"从故事中提取记忆片段失败 (新模型): {e}")
             log_info(f"提取记忆片段耗时: {time.time() - start_time:.2f} 秒")
             return []
 
-    # --- 修改：提取实体和关系的方法，增加CSV保存和导入逻辑 ---
+    # --- 修改：提取实体和关系的方法，适应新的节点模型 ---
     async def extract_entities_and_relationships_from_story(self, story_text: str, character_data: Dict[str, Any], related_characters: List[Dict[str, Any]], extracted_memories: List[Dict[str, Any]], graph_store) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        log_info(f"开始从故事中提取实体和关系...")
+        log_info(f"开始从故事中提取实体和关系 (新模型)...")
         start_time = time.time()
 
-        system_prompt = f"""
-        你是知识图谱构建专家，任务是从给定的关于"{character_data.get('name')}"的故事文本中识别出所有的实体（人物、地点、物品、组织、事件、概念等）以及它们之间的有向关系。
+        # 1. 提取实体（人物、地点、物品、事件等）
+        # 人物实体已包含在 character_data 和 related_characters 中
+        # 非人物实体从故事和记忆中提取
+        entities = []
+        # 从记忆中提取地点、标签作为实体
+        for memory in extracted_memories:
+            location = memory.get('location')
+            if location:
+                location_entity = {
+                    "app_id": str(uuid.uuid4()),
+                    "name": location,
+                    "type": "Place",
+                    "description": f"事件 '{memory.get('title', '')}' 发生的地点",
+                    "properties": {}
+                }
+                entities.append(location_entity)
 
-        **重要限定**:
-        1.  **视角**: 你提取的实体和关系必须是"{character_data.get('name')}"在故事中知晓的。
-        2.  **时间线**: 提取的实体和关系应反映"{character_data.get('name')}"当前的记忆状态。
+            for tag in memory.get('tags', []):
+                tag_entity = {
+                    "app_id": str(uuid.uuid4()),
+                    "name": tag,
+                    "type": "Concept", # 或者根据tag内容判断更具体的类型
+                    "description": f"与事件 '{memory.get('title', '')}' 相关的标签",
+                    "properties": {}
+                }
+                entities.append(tag_entity)
 
-        **实体提取规则**:
-        1.  提取所有在故事中出现过的、对"{character_data.get('name')}"有重要意义的名词或名词短语。
-        2.  实体类型包括但不限于：Person (人物), Place (地点), Object (物品), Organization (组织), Event (事件), Concept (概念)。
-        3.  对于人物，如果能推断出其与主角色的关系（如“母亲”、“同学”、“老师”），请在description中注明。
-        4.  为每个实体分配一个唯一的ID（使用UUID格式），并在输出中命名为 `app_id`，而不是 `id`。
-        5.  **重要**：对于人物实体，请确保其所有属性（如 age, appearance, family_status 等）都符合故事中描述的状态，特别是年龄。
+        # 2. 提取关系
+        # 关系主要指非人物实体与事件的关系
+        relationships = []
+        # (这部分在graph_store中通过CSV处理)
 
-        **关系提取规则**:
-        1.  识别实体之间存在的有向关系，这些关系必须是"{character_data.get('name')}"在故事中知晓的。例如：“{character_data.get('name')}认识B”、“A位于B”、“{character_data.get('name')}去过C”、“D事件影响了{character_data.get('name')}”等。
-        2.  关系类型应尽可能具体（如“KNOWS”, “WORKS_AT”, “LIVES_IN”, “LOVES”, “HATES”, “SPOKE_TO”, “VISITS”, “OWNS”, “PARTICIPATES_IN”, “CHALLENGES”, “CHILD_OF”, “MENTORS”, “INTERACTS_WITH”, “EXPERIENCES”等）。
-        3.  关系必须是基于"{character_data.get('name')}"的视角。
-        4.  为每个关系分配一个唯一的ID（使用UUID格式），并在输出中命名为 `app_id`，而不是 `id`。
+        extraction_filename = f"generated_stories/{character_data.get('id', 'unknown')}_extracted_entities_and_relationships_new_model.txt"
+        with open(extraction_filename, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"entities": entities, "relationships": relationships}, ensure_ascii=False, indent=2))
+        log_success(f"从故事中提取的实体和关系已保存到 {extraction_filename}")
 
-        **输出格式**:
-        {{
-        "entities": [
-            {{
-            "app_id": "唯一ID",
-            "name": "实体名称",
-            "type": "实体类型 (Person/Place/Object/Organization/Event/Concept)",
-            "description": "实体的简要描述，可包含与主角色的关系",
-            "properties": {{}} // 可选的额外属性，如 age, gender 等
-            }}
-        ],
-        "relationships": [
-            {{
-            "app_id": "唯一ID",
-            "source_entity_app_id": "源实体ID",
-            "target_entity_app_id": "目标实体ID",
-            "type": "关系类型",
-            "description": "关系的简要描述，强调是主角色视角下的关系",
-            "properties": {{}} // 可选的额外属性，如 strength, duration 等
-            }}
-        ]
-        }}
-        """
+        # --- 修改：将数据保存为新模型的CSV并导入 ---
+        if graph_store:
+            log_info(f"开始将数据保存为新模型的CSV并导入到 Neo4j...")
+            csv_files_info = graph_store.save_entities_and_relationships_to_csv(
+                character_data, # 主角色
+                related_characters, # 关联角色
+                entities, # 提取的非人物实体
+                relationships, # 提取的关系 (现在主要用于非人物实体)
+                extracted_memories, # 提取的记忆 (作为事件)
+                character_data.get('id', 'unknown') # 角色ID
+            )
 
-        user_prompt = f"""
-        以下是故事文本，请从中提取实体和关系：
-        {story_text}
-        """
+            nodes_filename = csv_files_info.get("nodes_file")
+            impressions_filename = csv_files_info.get("impressions_file")
+            entity_event_relationships_filename = csv_files_info.get("entity_event_relationships_file")
+            temporal_chain_filename = csv_files_info.get("temporal_chain_file")
 
-        try:
-            result = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
+            if nodes_filename:
+                success_nodes = graph_store.import_nodes_from_csv(nodes_filename)
+                if success_nodes:
+                    log_success(f"节点数据已成功从 CSV {nodes_filename} 导入 Neo4j。")
+                else:
+                    log_error(f"节点数据从 CSV {nodes_filename} 导入 Neo4j 失败。")
 
-            entities = result.get("entities", [])
-            relationships = result.get("relationships", [])
+            if impressions_filename:
+                success_impressions = graph_store.import_impressions_from_csv(impressions_filename)
+                if success_impressions:
+                    log_success(f"印象关系数据已成功从 CSV {impressions_filename} 导入 Neo4j。")
+                else:
+                    log_error(f"印象关系数据从 CSV {impressions_filename} 导入 Neo4j 失败。")
 
-            extraction_filename = f"generated_stories/{character_data.get('id', 'unknown')}_extracted_entities_and_relationships.txt"
-            with open(extraction_filename, "w", encoding="utf-8") as f:
-                f.write(json.dumps(result, ensure_ascii=False, indent=2))
-            log_success(f"从故事中提取的实体和关系已保存到 {extraction_filename}")
+            if entity_event_relationships_filename:
+                success_entity_event = graph_store.import_entity_event_relationships_from_csv(entity_event_relationships_filename)
+                if success_entity_event:
+                    log_success(f"实体-事件关系数据已成功从 CSV {entity_event_relationships_filename} 导入 Neo4j。")
+                else:
+                    log_error(f"实体-事件关系数据从 CSV {entity_event_relationships_filename} 导入 Neo4j 失败。")
 
-            # --- 修改：将实体和关系以及记忆、角色信息保存为统一 CSV 并导入到 Neo4j ---
-            if graph_store:
-                log_info(f"开始将提取的实体、关系、记忆、角色信息保存为统一 CSV 并导入到 Neo4j...")
-                csv_files_info = graph_store.save_entities_and_relationships_to_csv(
-                    character_data, # 主角色
-                    related_characters, # 关联角色
-                    entities, # 提取的实体
-                    relationships, # 提取的关系
-                    extracted_memories, # 提取的记忆
-                    character_data.get('id', 'unknown') # 角色ID
-                )
-                
-                nodes_filename = csv_files_info.get("nodes_file")
-                relationships_filename = csv_files_info.get("relationships_file")
-                
-                if nodes_filename:
-                    success_nodes = graph_store.import_nodes_from_csv(nodes_filename)
-                    if success_nodes:
-                        log_success(f"节点数据已成功从 CSV {nodes_filename} 导入 Neo4j。")
-                    else:
-                        log_error(f"节点数据从 CSV {nodes_filename} 导入 Neo4j 失败。")
-                
-                if relationships_filename:
-                    success_rels = graph_store.import_relationships_from_csv(relationships_filename)
-                    if success_rels:
-                        log_success(f"关系数据已成功从 CSV {relationships_filename} 导入 Neo4j。")
-                    else:
-                        log_error(f"关系数据从 CSV {relationships_filename} 导入 Neo4j 失败。")
-            else:
-                log_warning("GraphStore 未提供，跳过 CSV 保存和导入步骤。")
+            if temporal_chain_filename:
+                success_temporal = graph_store.import_temporal_chain_from_csv(temporal_chain_filename)
+                if success_temporal:
+                    log_success(f"时间链数据已成功从 CSV {temporal_chain_filename} 导入 Neo4j。")
+                else:
+                    log_error(f"时间链数据从 CSV {temporal_chain_filename} 导入 Neo4j 失败。")
 
-            log_success(f"从故事中提取了 {len(entities)} 个实体和 {len(relationships)} 条关系")
-            log_info(f"提取实体和关系耗时: {time.time() - start_time:.2f} 秒")
-            return entities, relationships
+        else:
+            log_warning("GraphStore 未提供，跳过 CSV 保存和导入步骤。")
 
-        except Exception as e:
-            log_error(f"从故事中提取实体和关系失败: {e}")
-            log_info(f"提取实体和关系耗时: {time.time() - start_time:.2f} 秒")
-            return [], []
+        log_success(f"从故事中提取了 {len(entities)} 个非人物实体")
+        log_info(f"提取实体和关系耗时: {time.time() - start_time:.2f} 秒")
+        # 返回空列表，因为主要逻辑已移至CSV导入
+        return [], []
     # ---

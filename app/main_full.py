@@ -187,11 +187,11 @@ async def generate_character(request: CharacterGenerationRequest, background_tas
         related_characters = await character_generator.generate_related_characters(character_data, count=5)
         relationships = await character_generator.generate_relationships(character_data, related_characters)
 
-        graph_store.create_character_node(character_data)
+        # graph_store.create_character_node(character_data)
         for rc in related_characters:
             rc["id"] = rc.get("id") or str(uuid.uuid4())
             characters[rc["id"]] = rc
-            graph_store.create_character_node(rc)
+            # graph_store.create_character_node(rc)
 
         log_success(f"角色 {character_id} 的关系图谱生成并存储完成")
 

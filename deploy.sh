@@ -12,14 +12,18 @@ echo "=========================================="
 echo ""
 
 # ========== 新增步骤：清空 generated_stories 目录 ==========
-echo "🧹 [1/8] 清空 generated_stories 目录..."
+echo "🧹 [1/8] 清空 generated_stories和import 目录..."
 
 GENERATED_STORIES_DIR="/CharacterLLM_framework/generated_stories"
+IMPORT_DIR="/zhouyuhao/zhouyuhao_data/import"
 
 if [ -d "$GENERATED_STORIES_DIR" ]; then
     echo "   正在清空目录: $GENERATED_STORIES_DIR"
     rm -rf "$GENERATED_STORIES_DIR"/*
     echo "✅ generated_stories 目录已清空"
+    echo "   正在清空目录: $IMPORT_DIR"
+    rm -rf "$IMPORT_DIR"/*
+    echo "✅ import 目录已清空"
 else
     echo "⚠️  警告：generated_stories 目录 $GENERATED_STORIES_DIR 不存在或无法访问。"
     # 若目录不存在，可选择创建空目录
@@ -184,8 +188,8 @@ echo "📦 [6/8] 安装/更新 Python 依赖..."
 cd /CharacterLLM_framework
 
 # 强制安装兼容的 Neo4j 驱动版本（避免版本不兼容）
-echo "   安装兼容的 Neo4j 驱动（5.20.0 稳定版）..."
-pip install --upgrade neo4j==5.20.0 numpy>=1.21.0 pandas>=1.3.0
+# echo "   安装兼容的 Neo4j 驱动（5.20.0 稳定版）..."
+# pip install --upgrade neo4j==5.20.0 numpy>=1.21.0 pandas>=1.3.0
 
 # # --- 取消注释：检查 requirements.txt 并安装依赖 ---
 # if [ -f requirements.txt ]; then
@@ -203,8 +207,8 @@ pip install --upgrade neo4j==5.20.0 numpy>=1.21.0 pandas>=1.3.0
 # echo "✅ Numpy 和 Pandas 版本检查/更新完成"
 
 # # 确保 neo4j 和 numpy 已安装 (可能 neo4j 会重新安装以适应新的 numpy/pandas)
-echo "🔍 安装/更新 neo4j 库..."
-pip install --upgrade neo4j
+# echo "🔍 安装/更新 neo4j 库..."
+# pip install --upgrade neo4j
 echo "✅ Neo4j 依赖检查/更新完成"
 echo ""
 

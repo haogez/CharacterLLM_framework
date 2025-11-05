@@ -1,0 +1,642 @@
+{
+  "entities": [
+    {
+      "app_id": "913ef720-21cd-4c76-876a-a76d3884260d",
+      "name": "家中婴儿房",
+      "type": "Place",
+      "description": "事件 '白佳唯出生迎接新生命' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "f622889e-c7bb-4083-b858-8170b7cfe22e",
+      "name": "出生",
+      "type": "Concept",
+      "description": "与事件 '白佳唯出生迎接新生命' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c0ed3d53-0c92-4285-ab6b-b7d996a3d0e0",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '白佳唯出生迎接新生命' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "794a7ca9-d665-46fd-948f-2ea6b97974f9",
+      "name": "新生命",
+      "type": "Concept",
+      "description": "与事件 '白佳唯出生迎接新生命' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "352cfab6-c8d3-4d92-9bd3-57edbc9ae097",
+      "name": "家中婴儿房",
+      "type": "Place",
+      "description": "事件 '父亲白海涛温柔守护新生儿' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "84e2935b-1e43-4469-9007-8e5e42ca01be",
+      "name": "父爱",
+      "type": "Concept",
+      "description": "与事件 '父亲白海涛温柔守护新生儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "90a907c4-9266-43b4-b95c-d307c0702949",
+      "name": "温柔",
+      "type": "Concept",
+      "description": "与事件 '父亲白海涛温柔守护新生儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9513e74e-c0c4-4daa-b7e7-29b086c6f0eb",
+      "name": "责任",
+      "type": "Concept",
+      "description": "与事件 '父亲白海涛温柔守护新生儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "8e641f28-8ebf-4430-9da1-b8fa948ce33d",
+      "name": "家中婴儿房",
+      "type": "Place",
+      "description": "事件 '母亲陈婉茹细心照料宝宝' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "24219412-f879-4d41-bb4b-31385387e20d",
+      "name": "母爱",
+      "type": "Concept",
+      "description": "与事件 '母亲陈婉茹细心照料宝宝' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "86cdeb87-5ae6-49fb-ae42-7a925fb54ed9",
+      "name": "细心",
+      "type": "Concept",
+      "description": "与事件 '母亲陈婉茹细心照料宝宝' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "62579708-880a-4f60-88f1-92a2bd8c2d93",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '母亲陈婉茹细心照料宝宝' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f702d4ce-e72f-433f-a74b-0769b9a427c9",
+      "name": "小区门口",
+      "type": "Place",
+      "description": "事件 '邻居刘海涛关怀宝宝' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "b5547b09-e2dd-4ec7-841e-6304a33ba4bb",
+      "name": "邻里",
+      "type": "Concept",
+      "description": "与事件 '邻居刘海涛关怀宝宝' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "80fc1e5c-e929-4b9e-bfa9-017a6a26af8c",
+      "name": "关怀",
+      "type": "Concept",
+      "description": "与事件 '邻居刘海涛关怀宝宝' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a36617ea-b6d3-4571-b34c-37772710f0f6",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '邻居刘海涛关怀宝宝' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "831d8237-5775-45d4-b64c-91d0ec98e8a3",
+      "name": "家中客厅",
+      "type": "Place",
+      "description": "事件 '邻居陈婉茹阿姨探望慰藉' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "6902e3f1-a30a-48c2-a0b6-9969f4bd86d1",
+      "name": "邻里",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉茹阿姨探望慰藉' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9d570fc1-49d7-488b-b70e-b5b1e43e5c40",
+      "name": "关怀",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉茹阿姨探望慰藉' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e87ab839-1503-441d-af4a-e64c87c6293d",
+      "name": "温馨",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉茹阿姨探望慰藉' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "14d0c787-fae5-4b90-8232-78511987cfb8",
+      "name": "家中卧室",
+      "type": "Place",
+      "description": "事件 '感知父母争吵的不安哭泣' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "02f754bb-7148-49aa-a516-4a2e851e2c60",
+      "name": "情绪",
+      "type": "Concept",
+      "description": "与事件 '感知父母争吵的不安哭泣' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "47f50971-36f2-40f7-923e-828c12172b84",
+      "name": "家庭争吵",
+      "type": "Concept",
+      "description": "与事件 '感知父母争吵的不安哭泣' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b13e4f53-f830-408b-8504-a8388fcafe47",
+      "name": "不安",
+      "type": "Concept",
+      "description": "与事件 '感知父母争吵的不安哭泣' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "94f1caeb-2056-4826-8090-f8b525541ba5",
+      "name": "婴儿房窗边",
+      "type": "Place",
+      "description": "事件 '白佳唯静静凝视窗外的光影' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "a1176bcc-a65d-4f75-87e4-77b5aef7ea13",
+      "name": "观察",
+      "type": "Concept",
+      "description": "与事件 '白佳唯静静凝视窗外的光影' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1d9e9b8b-057c-4c26-a342-630f56d6671f",
+      "name": "好奇",
+      "type": "Concept",
+      "description": "与事件 '白佳唯静静凝视窗外的光影' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9841aed8-3d20-4645-af9a-808b8700c418",
+      "name": "内向",
+      "type": "Concept",
+      "description": "与事件 '白佳唯静静凝视窗外的光影' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "0cb37721-3763-4b1e-9c23-35ea6e6b8aba",
+      "name": "房间窗边",
+      "type": "Place",
+      "description": "事件 '童年期白佳唯守护内心世界' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "a4a9bea1-e79d-4da6-804c-923b5606880a",
+      "name": "童年",
+      "type": "Concept",
+      "description": "与事件 '童年期白佳唯守护内心世界' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "5afda3e5-b62f-4774-a413-883b21c125f7",
+      "name": "内向",
+      "type": "Concept",
+      "description": "与事件 '童年期白佳唯守护内心世界' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d24a68ed-6e82-4abf-9916-609424109d17",
+      "name": "自我保护",
+      "type": "Concept",
+      "description": "与事件 '童年期白佳唯守护内心世界' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a4e26484-f326-48b2-8104-324bffd5c7d5",
+      "name": "家中卧室",
+      "type": "Place",
+      "description": "事件 '父亲清晨温馨唤醒女儿' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "9471e45c-8277-417d-9311-725fbbdb3b3e",
+      "name": "父爱",
+      "type": "Concept",
+      "description": "与事件 '父亲清晨温馨唤醒女儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "76c2b727-bc4b-4f72-9969-abd30a335ede",
+      "name": "温馨",
+      "type": "Concept",
+      "description": "与事件 '父亲清晨温馨唤醒女儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d1686f96-f7a9-42c0-bc8d-da448f24e970",
+      "name": "清晨",
+      "type": "Concept",
+      "description": "与事件 '父亲清晨温馨唤醒女儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b7108da2-94dc-4609-8240-c5c7c0900a42",
+      "name": "家中厨房",
+      "type": "Place",
+      "description": "事件 '母亲温柔细心准备生活' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "bfe38c60-c586-48b0-a9f3-d37a038de7b4",
+      "name": "母爱",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔细心准备生活' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3b5bac26-b9f1-4286-a3a9-e5570b7080c0",
+      "name": "关心",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔细心准备生活' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "159bbdcb-c05e-426e-a42a-95fa2126b432",
+      "name": "童年生活",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔细心准备生活' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "fa8ab9f4-ae96-4f08-87cb-d7361d090296",
+      "name": "学校图书馆",
+      "type": "Place",
+      "description": "事件 '白佳唯喜爱学校图书馆' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "cd8087c4-5468-4f48-8e5a-0663ce983678",
+      "name": "学习",
+      "type": "Concept",
+      "description": "与事件 '白佳唯喜爱学校图书馆' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a8c3c386-9996-4d33-a398-36d81c466c8e",
+      "name": "安静",
+      "type": "Concept",
+      "description": "与事件 '白佳唯喜爱学校图书馆' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a7bba01d-6665-4f47-8513-545b57603621",
+      "name": "自我表达",
+      "type": "Concept",
+      "description": "与事件 '白佳唯喜爱学校图书馆' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c13fad6a-256e-4853-9629-fe7d2e81dd04",
+      "name": "小区内",
+      "type": "Place",
+      "description": "事件 '邻居陈婉茹阿姨邀约玩手工' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "a8120a80-e0b6-4057-9c4a-16ef93ef6a0a",
+      "name": "邻里",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉茹阿姨邀约玩手工' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f3f07557-8a85-4755-a2fa-75e05c377bef",
+      "name": "陪伴",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉茹阿姨邀约玩手工' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e03170d7-bc02-47ef-8ada-0c624f6e79ba",
+      "name": "童年",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉茹阿姨邀约玩手工' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "54d27f4b-1efe-448a-82bc-559f575c2d1d",
+      "name": "家中",
+      "type": "Place",
+      "description": "事件 '父亲对女儿关心有限疏远' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "e1cbbebd-e265-4185-a00e-952911296c69",
+      "name": "亲子关系",
+      "type": "Concept",
+      "description": "与事件 '父亲对女儿关心有限疏远' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "8b9dbb0f-4a1a-4fd8-805f-5bc99cb04d03",
+      "name": "情感疏远",
+      "type": "Concept",
+      "description": "与事件 '父亲对女儿关心有限疏远' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "bf4133a4-edc9-4630-ba83-5fccad16aa72",
+      "name": "小区花园",
+      "type": "Place",
+      "description": "事件 '社区保安刘海涛守护问候' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "fb330760-2977-4c5d-bf0e-c3592cf848e5",
+      "name": "社区",
+      "type": "Concept",
+      "description": "与事件 '社区保安刘海涛守护问候' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "fc648e0c-b8f3-4385-a347-7b14e6cfc835",
+      "name": "安全感",
+      "type": "Concept",
+      "description": "与事件 '社区保安刘海涛守护问候' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6bfc35ea-cc23-4246-b03e-35141631e238",
+      "name": "关怀",
+      "type": "Concept",
+      "description": "与事件 '社区保安刘海涛守护问候' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f85f5471-bc44-4efb-a9af-bee4c67642b4",
+      "name": "社区活动中心",
+      "type": "Place",
+      "description": "事件 '志愿者林若寒鼓励绘画表达' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "733c22a8-5f7e-4f5d-b786-6e4a329c146b",
+      "name": "鼓励",
+      "type": "Concept",
+      "description": "与事件 '志愿者林若寒鼓励绘画表达' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "ee464092-eaa0-4222-9d62-c2477c12f47c",
+      "name": "绘画",
+      "type": "Concept",
+      "description": "与事件 '志愿者林若寒鼓励绘画表达' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "8746578b-7fee-442b-8b82-b94e83193c3a",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '志愿者林若寒鼓励绘画表达' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "8ffbd58a-5450-45db-a8c7-ce7f6ce5f88a",
+      "name": "学校图书馆",
+      "type": "Place",
+      "description": "事件 '朋友林霏陪伴图书馆学习' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "0ed43380-6d05-404f-af5c-8b3a952e4f2a",
+      "name": "友情",
+      "type": "Concept",
+      "description": "与事件 '朋友林霏陪伴图书馆学习' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "ecc7913e-7c7c-40ce-8027-1a6daf93ef9e",
+      "name": "陪伴",
+      "type": "Concept",
+      "description": "与事件 '朋友林霏陪伴图书馆学习' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "74e1b4cc-d7ce-43e9-ae58-6b7a8ae021b4",
+      "name": "安静",
+      "type": "Concept",
+      "description": "与事件 '朋友林霏陪伴图书馆学习' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "be886ec1-d6d8-45fc-a453-5a62c40328d6",
+      "name": "家中房间",
+      "type": "Place",
+      "description": "事件 '夜晚写日记绘画排解情绪' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "65f201d4-e0b0-4f9a-98f4-8ed2cfbad958",
+      "name": "写日记",
+      "type": "Concept",
+      "description": "与事件 '夜晚写日记绘画排解情绪' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9c079043-afdf-450e-a72a-04f813518f10",
+      "name": "绘画",
+      "type": "Concept",
+      "description": "与事件 '夜晚写日记绘画排解情绪' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e21e9035-aa41-4de3-a73a-e597070a7411",
+      "name": "情绪调节",
+      "type": "Concept",
+      "description": "与事件 '夜晚写日记绘画排解情绪' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a40de48e-2638-493f-b035-e617f7662aaf",
+      "name": "家中房间",
+      "type": "Place",
+      "description": "事件 '高中期绘画中渴望安宁' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "2cf74eda-328a-47b7-bece-a45a9d687c48",
+      "name": "绘画",
+      "type": "Concept",
+      "description": "与事件 '高中期绘画中渴望安宁' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b1784d95-4a33-46cf-9c58-d8fb5f4a8bd6",
+      "name": "内心渴望",
+      "type": "Concept",
+      "description": "与事件 '高中期绘画中渴望安宁' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "803fae75-515d-47aa-b9b3-4e20b5a4c230",
+      "name": "安宁",
+      "type": "Concept",
+      "description": "与事件 '高中期绘画中渴望安宁' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "47213c2f-2d5d-484d-897b-c46145fa9cca",
+      "name": "学校图书馆",
+      "type": "Place",
+      "description": "事件 '好友林霏邀请图书馆学习' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "0837c573-0cd0-4fd0-afad-0b3f4afd5e40",
+      "name": "友情",
+      "type": "Concept",
+      "description": "与事件 '好友林霏邀请图书馆学习' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "895d69a1-2ac0-476a-9408-27f3b5e0121f",
+      "name": "鼓励",
+      "type": "Concept",
+      "description": "与事件 '好友林霏邀请图书馆学习' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "5e91bf88-9787-42f0-be4a-f3c23f38d31d",
+      "name": "学习",
+      "type": "Concept",
+      "description": "与事件 '好友林霏邀请图书馆学习' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "465869c8-101b-4641-8155-c09e2169ab7e",
+      "name": "家中客厅",
+      "type": "Place",
+      "description": "事件 '父亲关心学业尝试沟通' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "c4675ede-3c83-4b8b-a078-35067fe23ac7",
+      "name": "亲情",
+      "type": "Concept",
+      "description": "与事件 '父亲关心学业尝试沟通' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3a3c1f31-312f-458e-af32-9260564b851d",
+      "name": "沟通",
+      "type": "Concept",
+      "description": "与事件 '父亲关心学业尝试沟通' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "273dd08b-1d16-452e-a22b-7c870d1606bc",
+      "name": "学业压力",
+      "type": "Concept",
+      "description": "与事件 '父亲关心学业尝试沟通' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3a428e71-6676-4aa1-9200-101372f25965",
+      "name": "家中餐厅",
+      "type": "Place",
+      "description": "事件 '母亲温柔劝慰缓解压力' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "4aae8770-8abf-4cc5-bcb1-b3d16d4db205",
+      "name": "母爱",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔劝慰缓解压力' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e996415e-d817-41fb-8b92-f1b39c2f5b32",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔劝慰缓解压力' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "ef4c9a54-5372-446b-b4c1-1211fe6e7385",
+      "name": "缓解压力",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔劝慰缓解压力' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "596d331e-95da-4849-b8f6-76a1f3188b62",
+      "name": "社区服务中心",
+      "type": "Place",
+      "description": "事件 '参加社区环保志愿活动' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "118d929a-76d3-4622-b0d9-febb1f9da33b",
+      "name": "社区活动",
+      "type": "Concept",
+      "description": "与事件 '参加社区环保志愿活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e0f5eaef-546d-4028-a268-2e2ac81d5839",
+      "name": "志愿服务",
+      "type": "Concept",
+      "description": "与事件 '参加社区环保志愿活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a38ceb89-e2cc-48b4-8550-19919731fcc8",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '参加社区环保志愿活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "35fe9459-4926-4165-878b-cf7518e8d048",
+      "name": "社区活动现场",
+      "type": "Place",
+      "description": "事件 '保安刘海涛活动中关怀提醒' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "be2e52e0-efda-4b53-adee-16912cc28d05",
+      "name": "社区",
+      "type": "Concept",
+      "description": "与事件 '保安刘海涛活动中关怀提醒' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c2aec92e-a9ab-4869-97c3-6069c67fa93e",
+      "name": "守护",
+      "type": "Concept",
+      "description": "与事件 '保安刘海涛活动中关怀提醒' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "13977380-c704-47b9-bcd4-858819615317",
+      "name": "关怀",
+      "type": "Concept",
+      "description": "与事件 '保安刘海涛活动中关怀提醒' 相关的标签",
+      "properties": {}
+    }
+  ],
+  "relationships": []
+}
