@@ -1,0 +1,807 @@
+{
+  "entities": [
+    {
+      "app_id": "ea4cda4f-a4dd-4a31-aeaa-ce272e6db835",
+      "name": "家中客厅",
+      "type": "Place",
+      "description": "事件 '婴幼儿期父亲轻声哼唱安抚' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "33b562d7-bc3a-4b94-9dd7-83d522b5796f",
+      "name": "父爱",
+      "type": "Concept",
+      "description": "与事件 '婴幼儿期父亲轻声哼唱安抚' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b03649af-fe82-451f-af82-5ab47444f31d",
+      "name": "安抚",
+      "type": "Concept",
+      "description": "与事件 '婴幼儿期父亲轻声哼唱安抚' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6ed27c2a-4854-4b4d-921a-1fe1be59778c",
+      "name": "婴幼儿期",
+      "type": "Concept",
+      "description": "与事件 '婴幼儿期父亲轻声哼唱安抚' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4ca0aa92-37cb-4ae7-8a71-6da516f68e10",
+      "name": "家中厨房或餐厅",
+      "type": "Place",
+      "description": "事件 '母亲温柔辅食引导' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "e10e2eb8-5ecb-4f76-bea8-a01a030dcc28",
+      "name": "母爱",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔辅食引导' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9b28f4cb-347b-44c3-b424-f4bd11be4f22",
+      "name": "辅食",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔辅食引导' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6678b70c-f60a-48ec-92f9-3b3cffbe09da",
+      "name": "依赖",
+      "type": "Concept",
+      "description": "与事件 '母亲温柔辅食引导' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "dbd13656-4a38-402c-9d58-276ca5677780",
+      "name": "小区花园",
+      "type": "Place",
+      "description": "事件 '白天明推婴儿车散步花园' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "0104cc31-b757-45fe-a4e5-245a0f2c16e7",
+      "name": "自然感知",
+      "type": "Concept",
+      "description": "与事件 '白天明推婴儿车散步花园' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "99bfd782-642f-4c10-b60a-6a788a109013",
+      "name": "父亲陪伴",
+      "type": "Concept",
+      "description": "与事件 '白天明推婴儿车散步花园' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "0eae207a-ca01-41f7-ae52-e8149d0ebf74",
+      "name": "婴幼儿期",
+      "type": "Concept",
+      "description": "与事件 '白天明推婴儿车散步花园' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "09bf3b99-cf2b-4599-9c7e-aa858324a9ec",
+      "name": "社区活动中心",
+      "type": "Place",
+      "description": "事件 '邻居陈雅静关心育儿交流' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "7ebbf889-4012-4efa-9ea7-311a705a4a9e",
+      "name": "邻里关系",
+      "type": "Concept",
+      "description": "与事件 '邻居陈雅静关心育儿交流' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e3b6e3c7-21e9-4ef9-9847-5ad196f48038",
+      "name": "育儿支持",
+      "type": "Concept",
+      "description": "与事件 '邻居陈雅静关心育儿交流' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f33e2458-1f92-44c4-a6a1-191383fddfce",
+      "name": "婴幼儿期",
+      "type": "Concept",
+      "description": "与事件 '邻居陈雅静关心育儿交流' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4e44e4e5-ac50-4df4-8a5c-2936b348def5",
+      "name": "小区绿地",
+      "type": "Place",
+      "description": "事件 '三岁佳唯与小动物亲密互动' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "e9954f52-d3b1-4006-93e8-04ced0b91537",
+      "name": "小动物",
+      "type": "Concept",
+      "description": "与事件 '三岁佳唯与小动物亲密互动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "40f53278-8c80-41e7-864a-946e4f9723af",
+      "name": "温柔",
+      "type": "Concept",
+      "description": "与事件 '三岁佳唯与小动物亲密互动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e5ce5636-8bf2-4d01-8ebd-7dc72e22322b",
+      "name": "童年期",
+      "type": "Concept",
+      "description": "与事件 '三岁佳唯与小动物亲密互动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1de38566-2148-44b1-be16-8507083c0506",
+      "name": "家中",
+      "type": "Place",
+      "description": "事件 '佳唯用彩铅描绘小动物素描' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "7e1ceedb-5355-46a7-8bd9-4ab664fad87e",
+      "name": "绘画",
+      "type": "Concept",
+      "description": "与事件 '佳唯用彩铅描绘小动物素描' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4bfe7e91-6ffa-47ec-b9d5-a143f3de3848",
+      "name": "情绪调节",
+      "type": "Concept",
+      "description": "与事件 '佳唯用彩铅描绘小动物素描' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "61b0d319-815b-444f-8895-8d140f389efa",
+      "name": "童年期",
+      "type": "Concept",
+      "description": "与事件 '佳唯用彩铅描绘小动物素描' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "12ec5414-09d0-4596-948d-7b649a0b33f1",
+      "name": "家中客厅",
+      "type": "Place",
+      "description": "事件 '父亲耐心教数字字母' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "4f528dbe-ea3a-4eaf-9cd4-25c7343fdbcd",
+      "name": "亲子关系",
+      "type": "Concept",
+      "description": "与事件 '父亲耐心教数字字母' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9e774a33-2955-4bcb-b65d-c089d805e4d3",
+      "name": "学习",
+      "type": "Concept",
+      "description": "与事件 '父亲耐心教数字字母' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "20cfa260-0c08-4298-81f9-84296c75c040",
+      "name": "童年期",
+      "type": "Concept",
+      "description": "与事件 '父亲耐心教数字字母' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6c35f07f-f92d-44a5-85b2-ec46fef310e4",
+      "name": "小区",
+      "type": "Place",
+      "description": "事件 '佳唯与邻居陈婉莹亲切互动' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "33ae1da8-177b-4043-9328-452acf12578b",
+      "name": "邻里关怀",
+      "type": "Concept",
+      "description": "与事件 '佳唯与邻居陈婉莹亲切互动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "ffa43be7-00ad-464a-b74f-63f9c28693d5",
+      "name": "情感支持",
+      "type": "Concept",
+      "description": "与事件 '佳唯与邻居陈婉莹亲切互动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b10efada-4479-47c9-a568-1710d9e99be3",
+      "name": "童年期",
+      "type": "Concept",
+      "description": "与事件 '佳唯与邻居陈婉莹亲切互动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a4cb43bf-d275-4cca-b826-b714027f10f0",
+      "name": "社区活动中心",
+      "type": "Place",
+      "description": "事件 '社区活动中与林筱萱初识' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "df1d4be6-3981-4e2a-b19d-9854be403371",
+      "name": "友谊",
+      "type": "Concept",
+      "description": "与事件 '社区活动中与林筱萱初识' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "7448779a-8a7d-48ec-ae7b-153d1fae5a9f",
+      "name": "社交尝试",
+      "type": "Concept",
+      "description": "与事件 '社区活动中与林筱萱初识' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "acc0db79-2f07-40b8-8a20-cf1d2e1ff584",
+      "name": "童年期",
+      "type": "Concept",
+      "description": "与事件 '社区活动中与林筱萱初识' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "58fb88bd-d37e-4ca9-a1ec-36e4bc415229",
+      "name": "社区活动中心",
+      "type": "Place",
+      "description": "事件 '陈雅静邀请参与动物保护活动' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "32b6d013-880a-4b84-b63c-360d416732e4",
+      "name": "动物保护",
+      "type": "Concept",
+      "description": "与事件 '陈雅静邀请参与动物保护活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "17f7c3ee-72c6-4e15-a28e-1877182286d7",
+      "name": "认可",
+      "type": "Concept",
+      "description": "与事件 '陈雅静邀请参与动物保护活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f9cdf713-7c4a-4f61-b260-047a77ee3c1b",
+      "name": "童年期",
+      "type": "Concept",
+      "description": "与事件 '陈雅静邀请参与动物保护活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1a13973b-1e16-4d48-abef-c7fa38c24262",
+      "name": "社区活动现场",
+      "type": "Place",
+      "description": "事件 '志愿者林静萍激励佳唯自信' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "ea7621a9-9d98-42ea-bc97-c6fbcda05518",
+      "name": "志愿服务",
+      "type": "Concept",
+      "description": "与事件 '志愿者林静萍激励佳唯自信' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9c71afc5-85c9-452d-9197-75e5e330aff9",
+      "name": "自信",
+      "type": "Concept",
+      "description": "与事件 '志愿者林静萍激励佳唯自信' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f885e1a3-0991-4911-831e-c95e710aed51",
+      "name": "童年期",
+      "type": "Concept",
+      "description": "与事件 '志愿者林静萍激励佳唯自信' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f710eecf-3e2f-43bd-bf78-77867b2aa7af",
+      "name": "校园老槐树下",
+      "type": "Place",
+      "description": "事件 '高中佳唯在老槐树下画画' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "16a99c02-e781-43e8-a7e3-fb8758cee0be",
+      "name": "绘画",
+      "type": "Concept",
+      "description": "与事件 '高中佳唯在老槐树下画画' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f90ef110-ad13-4342-9110-227e129737f5",
+      "name": "自我表达",
+      "type": "Concept",
+      "description": "与事件 '高中佳唯在老槐树下画画' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "48e6d044-9330-4413-9015-acf4947b3d9b",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '高中佳唯在老槐树下画画' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d3c7ff36-1ab3-40a1-8b48-98962d728f49",
+      "name": "校园老槐树下",
+      "type": "Place",
+      "description": "事件 '林筱萱主动陪伴共画' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "8e3ebd3d-304b-41b4-96dc-d33e81592a73",
+      "name": "友谊",
+      "type": "Concept",
+      "description": "与事件 '林筱萱主动陪伴共画' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c4efc67d-c9c7-4356-8fb1-3806113d31d1",
+      "name": "陪伴",
+      "type": "Concept",
+      "description": "与事件 '林筱萱主动陪伴共画' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "825530f2-843e-42ae-ba21-c70dbe2cb436",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '林筱萱主动陪伴共画' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "9d365238-0d94-46cc-8a54-f756b841c604",
+      "name": "家中餐厅",
+      "type": "Place",
+      "description": "事件 '父亲耐心询问学校生活' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "9482b24b-5038-4c83-b76d-87eeed103a49",
+      "name": "家庭支持",
+      "type": "Concept",
+      "description": "与事件 '父亲耐心询问学校生活' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e466d7b2-86cb-491b-a276-a390666a7881",
+      "name": "理解",
+      "type": "Concept",
+      "description": "与事件 '父亲耐心询问学校生活' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "0a688b09-1517-40e7-893d-b75a9873e4bf",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '父亲耐心询问学校生活' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a208d45d-e60f-469d-a6eb-16df61c56534",
+      "name": "家中厨房",
+      "type": "Place",
+      "description": "事件 '母亲嘱咐照顾小猫' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "dee15d41-541a-4403-8448-54a1c8ef443b",
+      "name": "母爱",
+      "type": "Concept",
+      "description": "与事件 '母亲嘱咐照顾小猫' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "cdbe5fd8-7989-414c-9b9f-44874631fa1e",
+      "name": "责任感",
+      "type": "Concept",
+      "description": "与事件 '母亲嘱咐照顾小猫' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "56c039cc-2b9d-4896-860f-774d0983fd31",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '母亲嘱咐照顾小猫' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "76e81bcc-b56a-4d0e-93dc-f5ccca406cfa",
+      "name": "宠物领养中心",
+      "type": "Place",
+      "description": "事件 '宠物领养中心细心照顾小狗' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "a90c43ca-e0a1-45e6-9445-0f6396a31b82",
+      "name": "宠物照顾",
+      "type": "Concept",
+      "description": "与事件 '宠物领养中心细心照顾小狗' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "710d70fa-16ca-4d04-9ba8-f174cfb70bd6",
+      "name": "责任感",
+      "type": "Concept",
+      "description": "与事件 '宠物领养中心细心照顾小狗' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "cd44e0b1-bcc9-4eb0-99ea-a4728483c749",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '宠物领养中心细心照顾小狗' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "7f187cfb-ba47-49a6-99e8-7919ece02580",
+      "name": "宠物领养中心",
+      "type": "Place",
+      "description": "事件 '陈雅静邀请协助宠物领养活动' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "0181de9f-d52b-45b9-9446-3f666d020a97",
+      "name": "宠物活动",
+      "type": "Concept",
+      "description": "与事件 '陈雅静邀请协助宠物领养活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "2516398c-a5a2-46d2-adf2-f6d5bb4ebd72",
+      "name": "鼓励",
+      "type": "Concept",
+      "description": "与事件 '陈雅静邀请协助宠物领养活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "97c014b6-2361-47a6-9916-b37d15a91d36",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '陈雅静邀请协助宠物领养活动' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4c4bc4e2-0c96-4b6b-806f-e62f1e237306",
+      "name": "宠物领养活动现场",
+      "type": "Place",
+      "description": "事件 '活动现场佳唯讲解小动物习性' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "b1de0906-541b-46f2-a159-cb4364e1bcef",
+      "name": "志愿服务",
+      "type": "Concept",
+      "description": "与事件 '活动现场佳唯讲解小动物习性' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4c611d6e-2ed6-4b5d-b700-e81821b466f1",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '活动现场佳唯讲解小动物习性' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "60db5001-6a85-42c7-8329-96b85d384f48",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '活动现场佳唯讲解小动物习性' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1fdb6b18-5ca3-4aa8-a4fc-f9efee0c1c0e",
+      "name": "宠物领养活动现场",
+      "type": "Place",
+      "description": "事件 '林静萍鼓励佳唯增强自信' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "d05fcaad-bcbd-4deb-96de-9646d6c38c1a",
+      "name": "鼓励",
+      "type": "Concept",
+      "description": "与事件 '林静萍鼓励佳唯增强自信' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e31f726f-ce6c-4d26-bac5-c90a2b4975c1",
+      "name": "自信",
+      "type": "Concept",
+      "description": "与事件 '林静萍鼓励佳唯增强自信' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "70b8e3c4-bcbd-41e3-b036-37a0c6c5797c",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '林静萍鼓励佳唯增强自信' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a5a8c5fa-d789-42d6-b198-8497c2910a4c",
+      "name": "回家路上",
+      "type": "Place",
+      "description": "事件 '回家路上感受夕阳温暖' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "5c9bc72e-2170-4616-b8ae-42ae2af9f03d",
+      "name": "自我接纳",
+      "type": "Concept",
+      "description": "与事件 '回家路上感受夕阳温暖' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "fd3f906a-0eac-4e3a-b1a5-3d33d1518a78",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '回家路上感受夕阳温暖' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "db74c992-0131-45a0-b57d-200110d64bed",
+      "name": "青少年期",
+      "type": "Concept",
+      "description": "与事件 '回家路上感受夕阳温暖' 相关的标签",
+      "properties": {}
+    }
+  ],
+  "relationships": [],
+  "character_to_character_relationships": [
+    {
+      "relationship_id": "6ef367c6-070c-4fe9-8ee8-6abea3d1caf6",
+      "from_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "to_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "relationship_type": "FAMILY",
+      "description": "白佳唯视白天明为父亲，虽然感受到父亲的关心但因陪伴少而情感有所缺失。",
+      "strength": 60
+    },
+    {
+      "relationship_id": "0dbb274a-6efe-4557-9702-b23905af3775",
+      "from_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "to_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白佳唯与陈婉莹为邻居，小范围内有一定交流但关系不深。",
+      "strength": 40
+    },
+    {
+      "relationship_id": "c76c5fc3-63c8-46a6-9075-61c708e2afbf",
+      "from_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "to_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "relationship_type": "FRIEND",
+      "description": "白佳唯与林筱萱是同班好友，二人相互支持与理解，关系亲密。",
+      "strength": 85
+    },
+    {
+      "relationship_id": "b21d4bec-2d5a-467f-81e6-42f5324512eb",
+      "from_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "to_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白佳唯对社区工作人员陈雅静有一定认识，关系较为正式和间接。",
+      "strength": 30
+    },
+    {
+      "relationship_id": "12bb1695-6dfe-4f50-ab69-6eb679e54a16",
+      "from_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "to_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "relationship_type": "STRANGER",
+      "description": "白佳唯与林静萍没有直接互动，关系较远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "f82d89ff-52c2-47a3-9909-bbee84db41c7",
+      "from_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "to_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "relationship_type": "FAMILY",
+      "description": "白天明作为父亲，重视女儿白佳唯的成长，尽管工作忙碌仍尽力关心她。",
+      "strength": 70
+    },
+    {
+      "relationship_id": "7f08d166-19e6-4b85-ae46-1e8950a2c55f",
+      "from_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "to_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白天明与邻居陈婉莹保持礼貌邻里关系，偶有交流但不深入。",
+      "strength": 35
+    },
+    {
+      "relationship_id": "4bf2764b-d598-4b85-b8e0-4b0d7b0626e5",
+      "from_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "to_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "relationship_type": "STRANGER",
+      "description": "白天明与林筱萱无直接联系，关系疏远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "997d6fa6-07fd-412d-b7fb-926fa020f507",
+      "from_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "to_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白天明与社区工作人员陈雅静有日常社区事务的接触，保持良好沟通。",
+      "strength": 50
+    },
+    {
+      "relationship_id": "b0774e45-06ea-4435-a544-78659c5736a4",
+      "from_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "to_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "relationship_type": "STRANGER",
+      "description": "白天明与林静萍无明显交集，关系疏远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "503641d3-9565-4df2-beb1-4e0102356650",
+      "from_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "to_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉莹关注邻居白佳唯的成长，偶尔照看孩子，关系友好但并非亲密。",
+      "strength": 50
+    },
+    {
+      "relationship_id": "b0a3c942-3613-48ad-8ca9-50c0980ec254",
+      "from_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "to_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉莹与白天明为邻居，保持日常礼貌和有限交流。",
+      "strength": 40
+    },
+    {
+      "relationship_id": "43d47395-7f08-45d1-9a28-195cab82f49b",
+      "from_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "to_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉莹通过社区和学校环境认识林筱萱，关系一般，偶有接触。",
+      "strength": 45
+    },
+    {
+      "relationship_id": "8d228c53-af46-4e2c-9b71-cccdf4beb403",
+      "from_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "to_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "relationship_type": "COLLEAGUE",
+      "description": "陈婉莹与社区工作人员陈雅静在社区活动中有合作，关系较为紧密。",
+      "strength": 70
+    },
+    {
+      "relationship_id": "01172518-9f41-4794-bc93-7b692ff509ea",
+      "from_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "to_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉莹与社区志愿者林静萍通过社区活动有所接触，关系较为友好。",
+      "strength": 50
+    },
+    {
+      "relationship_id": "002cecd5-efb5-45ea-91e1-06d8adf9b3da",
+      "from_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "to_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "relationship_type": "FRIEND",
+      "description": "林筱萱视白佳唯为亲密朋友，愿意倾听和支持她，关系深厚。",
+      "strength": 85
+    },
+    {
+      "relationship_id": "303a6635-a05c-4eaf-bc56-ab79ac23efa4",
+      "from_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "to_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "relationship_type": "STRANGER",
+      "description": "林筱萱与白天明无直接联系，彼此关系疏远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "ed4a9e6b-27da-4278-a214-2d5ea77ec74c",
+      "from_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "to_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "林筱萱与陈婉莹作为邻里和学校家长的联系有所接触，关系一般。",
+      "strength": 45
+    },
+    {
+      "relationship_id": "3aea0f8b-ee0d-4ac7-8727-a734ce2c26a8",
+      "from_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "to_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "林筱萱对社区工作人员陈雅静有一定了解，关系保持礼貌和尊重。",
+      "strength": 40
+    },
+    {
+      "relationship_id": "a052838a-3bb6-4af1-9816-7680fb55bd4d",
+      "from_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "to_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "林筱萱和社区志愿者林静萍在公益活动中有接触，关系积极且友好。",
+      "strength": 60
+    },
+    {
+      "relationship_id": "b631cea0-1169-467e-80bf-6b57f48ec110",
+      "from_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "to_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈雅静作为社区工作人员，关注白佳唯的家庭情况，保持一定的社区关怀。",
+      "strength": 50
+    },
+    {
+      "relationship_id": "ecabdff0-64fa-4219-80ee-159a8b1f9861",
+      "from_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "to_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈雅静与白天明在社区事务上保持沟通，关系正式且稳定。",
+      "strength": 55
+    },
+    {
+      "relationship_id": "1e241c71-ba7b-4461-9b52-2ac25d0ffd2f",
+      "from_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "to_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "relationship_type": "COLLEAGUE",
+      "description": "陈雅静与陈婉莹在社区活动中合作密切，关系良好且信任。",
+      "strength": 75
+    },
+    {
+      "relationship_id": "f2944b6f-b95f-4fb4-8962-22de446250cc",
+      "from_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "to_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈雅静对林筱萱有所了解，通过社区和学校活动保持一定联系。",
+      "strength": 45
+    },
+    {
+      "relationship_id": "e1ef8c64-9df8-4ba6-9330-f2bbe06d6f15",
+      "from_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "to_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "relationship_type": "COLLEAGUE",
+      "description": "陈雅静与社区志愿者林静萍在社区工作中合作频繁，关系紧密且互相支持。",
+      "strength": 80
+    },
+    {
+      "relationship_id": "b34e2e5b-c522-46c6-84a4-bab4df667746",
+      "from_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "to_character_app_id": "ffc9c3d5-cc2e-4646-b349-d79789092747",
+      "relationship_type": "STRANGER",
+      "description": "林静萍与白佳唯没有直接互动，彼此关系较远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "03397c8a-16ca-428c-88c7-a0c10327e6e0",
+      "from_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "to_character_app_id": "315c8b83-5e85-4d4a-9634-9394b4dc8833",
+      "relationship_type": "STRANGER",
+      "description": "林静萍与白天明无明显联系，关系疏远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "36410f2f-470d-402c-9023-d4bdf6e9fe7b",
+      "from_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "to_character_app_id": "f0cce365-cef3-4611-bf7b-50c5787cc68f",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "林静萍通过社区活动与陈婉莹有一定接触，关系友好。",
+      "strength": 55
+    },
+    {
+      "relationship_id": "b7d91c3c-a01b-4850-9d4e-cb339ce47574",
+      "from_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "to_character_app_id": "6d963f2f-befb-4632-8758-b05d1c7b9358",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "林静萍与林筱萱在社区公益活动中有交集，关系正向且支持。",
+      "strength": 60
+    },
+    {
+      "relationship_id": "78fea578-3036-454d-b42e-6b36ad119c3e",
+      "from_character_app_id": "af5d2075-af0a-4827-a10a-65fc47870ba0",
+      "to_character_app_id": "8ae1ebd9-047b-49e5-b583-a1023d2615b9",
+      "relationship_type": "COLLEAGUE",
+      "description": "林静萍与社区工作人员陈雅静密切合作，关系稳固且互信。",
+      "strength": 85
+    }
+  ]
+}

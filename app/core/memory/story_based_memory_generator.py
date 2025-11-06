@@ -190,6 +190,136 @@ class StoryBasedMemoryGenerator:
         log_info(f"完善角色背景耗时: {time.time() - start_time:.2f} 秒")
         return main_character, related_characters
 
+    async def infer_character_relationships(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], graph_store) -> List[Dict[str, Any]]:
+        """
+        推断主角色与关联角色之间，以及关联角色彼此之间的关系。
+        """
+        log_info(f"开始为角色 {main_character.get('name')} 及其关联角色推断关系...")
+        start_time = time.time()
+
+        all_characters = [main_character] + related_characters
+        relationships = []
+
+        if len(all_characters) < 2:
+            log_info("角色数量少于2，无需推断关系。")
+            return relationships
+
+        # 构建角色信息字符串，供 LLM 分析，并明确包含 ID
+        char_info_list = []
+        for char in all_characters:
+            char_info_list.append(
+                f"ID: {char.get('id')}\n"  # 明确包含 ID
+                f"姓名: {char.get('name')}\n"
+                f"年龄: {char.get('age')}\n"
+                f"职业: {char.get('occupation')}\n"
+                f"价值观: {char.get('values')}\n"
+                f"社交模式: {char.get('social_pattern')}\n"
+                f"过往经历: {char.get('past_experience')}\n"
+                f"背景故事: {char.get('background')[:200]}...\n" # 限制长度，避免 prompt 过长
+                f"---"
+            )
+        all_char_info_str = "\n".join(char_info_list)
+
+        # 构建 LLM Prompt
+        system_prompt = f"""
+        你是关系分析专家。根据以下角色信息，分析并推断每一对角色之间的关系。
+
+        **角色信息 (包含ID)**:
+        {all_char_info_str}
+
+        **任务**:
+        1.  分析所有角色对 (A, B)，其中 A 和 B 是不同角色的 ID。
+        2.  推断 A 对 B 的关系类型 (如 FRIEND, FAMILY, COLLEAGUE, STRANGER, ACQUAINTANCE, ENEMY, MENTOR, etc.)。
+        3.  用 1-2 句话描述 A 对 B 的关系 (基于他们的背景故事、价值观、社交模式等)。
+        4.  估算 A 对 B 的关系强度 (1-100)。考虑因素：关系类型、过往互动、价值观相似度、社交模式（如孤僻的人可能对所有关系强度评分较低）。
+        5.  如果 A 和 B 没有直接联系或互动，标记关系为 STRANGER，强度设为 5。
+
+        **输出格式** (JSON数组):
+        [
+          {{
+            "relationship_id": "uuid",
+            "from_character_id": "角色A的ID (必须从上面的角色信息中准确复制ID)",
+            "to_character_id": "角色B的ID (必须从上面的角色信息中准确复制ID)",
+            "relationship_type": "FRIEND",
+            "description": "A认为B是... (A对B的看法或关系描述)",
+            "strength": 85
+          }},
+          ...
+        ]
+
+        **重要**:
+        - 每个关系都必须包含所有字段。
+        - 为每一对角色 (A, B) 都生成一条记录 (A->B)。
+        - 关系是**有向**的，A->B 和 B->A 可能不同 (例如，A是B的老师，但B不是A的老师；A喜欢B，但B不喜欢A)。
+        - **必须**使用角色信息中明确给出的 "ID:" 后面的值作为 "from_character_id" 和 "to_character_id"。
+        - 请直接返回JSON数组，不要添加其他解释文字。
+        """
+
+        user_prompt = "请根据角色信息推断所有角色对之间的有向关系。"
+
+        try:
+            result = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
+
+            if isinstance(result, list):
+                raw_relationships = result
+            elif isinstance(result, dict):
+                raw_relationships = result.get("relationships", [])
+            else:
+                log_warning(f"LLM 推断关系返回了非预期格式: {type(result)}")
+                raw_relationships = []
+
+            for raw_rel in raw_relationships:
+                if not isinstance(raw_rel, dict):
+                    log_warning(f"跳过非字典格式的关系: {raw_rel}")
+                    continue
+
+                rel_id = str(uuid.uuid4())
+                # 确保处理 None 或空字符串的情况
+                from_char_id = raw_rel.get("from_character_id")
+                to_char_id = raw_rel.get("to_character_id")
+                if not from_char_id or not to_char_id:
+                    log_warning(f"关系中缺少有效的 from_character_id 或 to_character_id: {raw_rel}")
+                    continue # 跳过无效关系
+
+                processed_rel = {
+                    "relationship_id": rel_id,
+                    "from_character_app_id": from_char_id, # 注意字段名映射
+                    "to_character_app_id": to_char_id,
+                    "relationship_type": raw_rel.get("relationship_type", "UNKNOWN"),
+                    "description": raw_rel.get("description", ""),
+                    "strength": raw_rel.get("strength", 50)
+                }
+                # 验证 ID 是否存在于角色列表中
+                if from_char_id not in [c['id'] for c in all_characters] or to_char_id not in [c['id'] for c in all_characters]:
+                     log_warning(f"关系中包含未知角色ID: {from_char_id} -> {to_char_id}, 跳过此关系。")
+                     continue
+                if from_char_id == to_char_id:
+                    log_warning(f"关系的起始和结束ID相同: {from_char_id}, 跳过此关系。")
+                    continue
+                relationships.append(processed_rel)
+
+            log_success(f"推断出 {len(relationships)} 条角色间关系。")
+
+            # --- 移除：不再直接导入图谱，由调用方处理 ---
+            # if graph_store and relationships:
+            #     log_info(f"开始将 {len(relationships)} 条角色间关系导入图谱...")
+            #     success_char_rels = graph_store.import_character_to_character_relationships_from_list(relationships)
+            #     if success_char_rels:
+            #         log_success(f"角色间关系数据已成功从列表导入 Neo4j。")
+            #     else:
+            #         log_error(f"角色间关系数据导入 Neo4j 失败。")
+            # else:
+            #     log_info("没有角色间关系需要导入图谱或 GraphStore 未提供。")
+            # ---
+
+        except Exception as e:
+            log_error(f"推断角色关系失败: {e}")
+            import traceback
+            traceback.print_exc()
+
+        log_info(f"推断角色关系耗时: {time.time() - start_time:.2f} 秒")
+        return relationships
+
     async def generate_chaptered_lifespan_story(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], story_idea: str) -> str:
         log_info(f"开始为角色 {main_character.get('name')} 生成分章节人生故事...")
         start_time = time.time()
@@ -463,7 +593,6 @@ class StoryBasedMemoryGenerator:
             log_info(f"提取记忆片段耗时: {time.time() - start_time:.2f} 秒")
             return []
 
-    # --- 修改：提取实体和关系的方法，适应新的节点模型 ---
     async def extract_entities_and_relationships_from_story(self, story_text: str, character_data: Dict[str, Any], related_characters: List[Dict[str, Any]], extracted_memories: List[Dict[str, Any]], graph_store) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         log_info(f"开始从故事中提取实体和关系 (新模型)...")
         start_time = time.time()
@@ -500,28 +629,34 @@ class StoryBasedMemoryGenerator:
         relationships = []
         # (这部分在graph_store中通过CSV处理)
 
+        # 3. 推断角色间关系
+        character_to_character_relationships = await self.infer_character_relationships(character_data, related_characters, graph_store) # 调用推断方法
+        log_success(f"推断出 {len(character_to_character_relationships)} 条角色间关系")
+
         extraction_filename = f"generated_stories/{character_data.get('id', 'unknown')}_extracted_entities_and_relationships_new_model.txt"
         with open(extraction_filename, "w", encoding="utf-8") as f:
-            f.write(json.dumps({"entities": entities, "relationships": relationships}, ensure_ascii=False, indent=2))
-        log_success(f"从故事中提取的实体和关系已保存到 {extraction_filename}")
+            f.write(json.dumps({"entities": entities, "relationships": relationships, "character_to_character_relationships": character_to_character_relationships}, ensure_ascii=False, indent=2))
+        log_success(f"从故事中提取的实体、关系和角色间关系已保存到 {extraction_filename}")
 
 
-        # --- 修改：将数据保存为新模型的CSV并导入 ---
         if graph_store:
             log_info(f"开始将数据保存为新模型的CSV并导入到 Neo4j...")
             csv_files_info = graph_store.save_entities_and_relationships_to_csv(
                 character_data, # 主角色
                 related_characters, # 关联角色
                 entities, # 提取的非人物实体
-                relationships, # 提取的关系 (现在主要用于非人物实体)
+                relationships, # 提取的非人物实体-事件关系
                 extracted_memories, # 提取的记忆 (作为事件)
-                character_data.get('id', 'unknown') # 角色ID
+                character_data.get('id', 'unknown'), # 角色ID
+                character_to_character_relationships # 新增：推断的角色间关系
             )
 
             nodes_filename = csv_files_info.get("nodes_file")
             impressions_filename = csv_files_info.get("impressions_file")
             entity_event_relationships_filename = csv_files_info.get("entity_event_relationships_file")
             temporal_chain_filename = csv_files_info.get("temporal_chain_file")
+            details_filename = csv_files_info.get("details_file")
+            char_to_char_relationships_filename = csv_files_info.get("char_to_char_relationships_file") # 新增
 
             if nodes_filename:
                 success_nodes = graph_store.import_nodes_from_csv(nodes_filename)
@@ -551,11 +686,27 @@ class StoryBasedMemoryGenerator:
                 else:
                     log_error(f"时间链数据从 CSV {temporal_chain_filename} 导入 Neo4j 失败。")
 
+            if details_filename:
+                success_details = graph_store.import_event_details_from_csv(details_filename)
+                if success_details:
+                    log_success(f"事件细节数据已成功从 CSV {details_filename} 导入 Neo4j。")
+                else:
+                    log_error(f"事件细节数据从 CSV {details_filename} 导入 Neo4j 失败。")
+
+            # --- 新增：导入角色间关系 ---
+            if char_to_char_relationships_filename:
+                success_char_to_char = graph_store.import_character_to_character_relationships_from_csv(char_to_char_relationships_filename)
+                if success_char_to_char:
+                    log_success(f"角色间关系数据已成功从 CSV {char_to_char_relationships_filename} 导入 Neo4j。")
+                else:
+                    log_error(f"角色间关系数据从 CSV {char_to_char_relationships_filename} 导入 Neo4j 失败。")
+            else:
+                log_info("没有角色间关系CSV文件需要导入。")
+            # ---
         else:
             log_warning("GraphStore 未提供，跳过 CSV 保存和导入步骤。")
 
         log_success(f"从故事中提取了 {len(entities)} 个非人物实体")
         log_info(f"提取实体和关系耗时: {time.time() - start_time:.2f} 秒")
         # 返回空列表，因为主要逻辑已移至CSV导入
-        return [], []
-    # ---
+        return [], [], character_to_character_relationships # (entities, non_event_relationships, char_to_char_relationships)

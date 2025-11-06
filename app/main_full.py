@@ -340,8 +340,6 @@ async def chat_with_character(request: ChatRequest):
 async def get_chat_history(character_id: str):
     return {"message": "对话历史功能暂未实现", "character_id": character_id, "history": []}
 
-# --- 修改：generate_and_store_fine_grained_memories 函数 ---
-# --- 修改：generate_and_store_fine_grained_memories 函数 ---
 async def generate_and_store_fine_grained_memories(
     character_id: str,
     main_character: Dict[str, Any],
@@ -372,52 +370,29 @@ async def generate_and_store_fine_grained_memories(
         entity_extraction_start_time = time.time()
 
         # --- 修改：调用修改后的方法，传入 graph_store, related_characters 和 extracted_memories ---
-        entities, relationships_from_story = await story_memory_generator.extract_entities_and_relationships_from_story(
-            story_text, 
-            main_character, 
+        entities, relationships_from_story, imported_char_to_char_rels = await story_memory_generator.extract_entities_and_relationships_from_story(
+            story_text,
+            main_character,
             related_characters, # 传递关联角色
             extracted_memories, # 传递提取的记忆
             graph_store
         )
+        imported_char_to_char_count = len(imported_char_to_char_rels) if imported_char_to_char_rels else 0
         # ---
         
-        log_debug(f"提取实体和关系函数返回，实体 {len(entities)} 个，关系 {len(relationships_from_story)} 条")
-        log_info(f"提取完成，共 {len(entities)} 个实体和 {len(relationships_from_story)} 条关系，耗时: {time.time() - entity_extraction_start_time:.2f} 秒")
+        log_debug(f"提取实体和关系函数返回，实体 {len(entities)} 个，非事件关系 {len(relationships_from_story)} 条，角色间关系 {imported_char_to_char_count} 条")
+        log_info(f"从故事中提取实体和关系耗时: {time.time() - entity_extraction_start_time:.2f} 秒")
 
-        # --- 修改：移除所有单独的节点和关系创建操作 ---
-        # 之前的代码：
-        # log_info("开始创建图谱节点和关系...")
-        # graph_creation_start_time = time.time()
-        # graph_store.create_character_node(main_character) # 移除
-        # stored_memory_count = 0
-        # for mem in extracted_memories: # 移除
-        #     success = graph_store.create_memory_node_and_connect(mem, character_id) # 移除
-        #     if success: # 移除
-        #         stored_memory_count += 1 # 移除
-        #     else: # 移除
-        #         log_warning(...) # 移除
-        # log_info(f"记忆节点创建/连接完成...") # 移除
-        # created_rel_count = 0
-        # for rel in relationships_from_story: # 移除
-        #     success = graph_store.create_relationship_edge(rel) # 移除
-        #     if success: # 移除
-        #         created_rel_count += 1 # 移除
-        #     else: # 移除
-        #         log_warning(...) # 移除
-        # log_info(f"关系数据验证并写入CSV完成...") # 移除
-        # log_info(f"图谱创建完成...") # 移除
-        # memory_gen_time = time.time() - memory_start # 移除
-        # log_memory_generation_summary(...) # 移除
 
         # 现在所有数据（主角色、关联角色、实体、记忆、关系）都已通过 story_memory_generator 中的 save_entities_and_relationships_to_csv 和 import_nodes/relationships_from_csv 一次性注入
-        log_info(f"所有图谱数据（节点和关系）已通过统一CSV流程一次性注入完成。")
+        log_info(f"所有图谱数据（节点、印象、实体-事件关系、时间链、事件细节、角色-角色关系）已通过 extract_entities_and_relationships_from_story 流程注入完成。")
 
         memory_gen_time = time.time() - memory_start
-        # 由于所有数据都已通过CSV注入，我们可以认为存储的记忆片段数量等于提取的数量
-        log_memory_generation_summary(character_id, character_name, len(extracted_memories), 0, memory_gen_time)
+        # 由于所有数据都已通过内部流程注入
+        log_memory_generation_summary(character_id, character_name, len(extracted_memories), imported_char_to_char_count, memory_gen_time)
 
         total_time = time.time() - start_time
-        log_info(f"角色生成→故事生成→记忆提取→图谱存储完整流程耗时: {total_time:.2f} 秒")
+        log_info(f"角色生成→故事生成→记忆提取→关系推断→图谱存储完整流程耗时: {total_time:.2f} 秒")
 
         if character_id in characters:
             characters[character_id]["generation_info"] = {

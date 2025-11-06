@@ -68,6 +68,7 @@ class GraphStore:
             self.driver.close()
             print("--- Neo4j 连接已关闭 ---")
 
+
     def create_character_node(self, character_data: Dict[str, Any]) -> bool:
         """
         创建或更新角色节点。
@@ -420,6 +421,7 @@ class GraphStore:
         
         return True
 
+
     def connect_entity_to_event(self, entity_app_id: str, event_app_id: str, relationship_type: str = "RELATED_TO") -> bool:
         """
         连接非人物实体到事件。
@@ -700,31 +702,30 @@ class GraphStore:
                 print(f"更新印象 {impression_app_id} 失败: {e}")
                 return False
 
-    # --- 保存统一格式的 CSV 文件 (使用 Base64 编码 properties) ---
-    def save_entities_and_relationships_to_csv(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], entities: List[Dict[str, Any]], relationships: List[Dict[str, Any]], memories: List[Dict[str, Any]], character_id: str) -> Dict[str, str]:
+    def save_entities_and_relationships_to_csv(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], entities: List[Dict[str, Any]], relationships: List[Dict[str, Any]], memories: List[Dict[str, Any]], character_id: str, character_to_character_relationships: List[Dict[str, Any]] = None) -> Dict[str, str]:
         """
         将所有数据（主角色、关联角色、实体、关系、记忆）保存为统一格式的 CSV 文件。
         """
         print(f"--- 开始将数据保存为统一格式的 CSV (新模型, 修复类型和引号 - 使用Base64) ---")
-        
         nodes_filename = os.path.join(self.temp_csv_dir, f"story_nodes_{character_id}.csv")
-        relationships_filename = os.path.join(self.temp_csv_dir, f"story_relationships_{character_id}.csv")
+        relationships_filename = os.path.join(self.temp_csv_dir, f"story_relationships_{character_id}.csv") # 非人物实体-事件关系
         impressions_filename = os.path.join(self.temp_csv_dir, f"story_impressions_{character_id}.csv")
         temporal_chain_filename = os.path.join(self.temp_csv_dir, f"temporal_chain_{character_id}.csv")
         details_filename = os.path.join(self.temp_csv_dir, f"event_details_{character_id}.csv")
+        # --- 新增：角色间关系 CSV 文件名 ---
+        char_to_char_relationships_filename = os.path.join(self.temp_csv_dir, f"character_to_character_relationships_{character_id}.csv")
+        # ---
 
         # 创建一个角色ID映射表，用于去重
         all_character_ids = set()
         all_character_ids.add(main_character.get('id'))
         for rc in related_characters:
             all_character_ids.add(rc.get('id'))
-
         # 从记忆中收集所有参与者ID
         for memory in memories:
             participants = memory.get('participants', [])
             for pid in participants:
                 all_character_ids.add(pid)
-
         # 创建一个角色字典，键为 app_id，值为角色数据
         character_map = {}
         character_map[main_character.get('id')] = main_character
@@ -732,6 +733,7 @@ class GraphStore:
             character_map[rc.get('id')] = rc
 
         # --- 保存节点 CSV (Character, Event, 其他实体) ---
+        # ... (节点CSV保存逻辑，保持不变)
         with open(nodes_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = [
                 'node_id', 'label', 'name', 'app_id', 'age', 'gender', 'occupation', 'hobby', 'skill',
@@ -742,13 +744,11 @@ class GraphStore:
             ]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-
             # 1. 写入所有角色节点 (去重后)
             for char_id in all_character_ids:
                 char_data = character_map.get(char_id)
                 if not char_data:
                     continue
-
                 char_node_id = str(uuid.uuid4())
                 char_props = {
                     'node_id': char_node_id,
@@ -789,7 +789,6 @@ class GraphStore:
                 json_str = json.dumps(dynamic_props, ensure_ascii=False)
                 char_props['properties'] = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
                 writer.writerow(char_props)
-
             # 2. 写入事件节点 (从记忆中提取)
             event_node_map = {}
             for memory in memories:
@@ -814,7 +813,6 @@ class GraphStore:
                 json_str_mem = json.dumps(dynamic_props_mem, ensure_ascii=False)
                 event_props['properties'] = base64.b64encode(json_str_mem.encode('utf-8')).decode('utf-8')
                 writer.writerow(event_props)
-
             # 3. 写入非人物实体节点
             entity_node_map = {}
             for entity in entities:
@@ -835,20 +833,18 @@ class GraphStore:
                 json_str_ent = json.dumps(dynamic_props_ent, ensure_ascii=False)
                 ent_props['properties'] = base64.b64encode(json_str_ent.encode('utf-8')).decode('utf-8')
                 writer.writerow(ent_props)
-
         print(f"--- 节点 CSV 文件已保存至: {nodes_filename} ---")
 
         # --- 保存事件细节 CSV ---
+        # ... (事件细节CSV保存逻辑，保持不变)
         with open(details_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['detail_id', 'event_app_id', 'type', 'content', 'properties']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-
             for memory in memories:
                 event_app_id = memory.get('id')
                 if not event_app_id:
                     continue
-                
                 # 提取事件细节（假设在memory的details字段中）
                 details = memory.get('details', [])
                 for detail in details:
@@ -859,7 +855,6 @@ class GraphStore:
                         'type': detail.get('type', 'DETAIL'),
                         'content': detail.get('content', '')
                     }
-                    
                     dynamic_props = {k: v for k, v in detail.items() if k not in ['type', 'content', 'detail_id', 'event_app_id', 'properties']}
                     for k, v in dynamic_props.items():
                         if isinstance(v, (dict, list)):
@@ -867,15 +862,14 @@ class GraphStore:
                     json_str = json.dumps(dynamic_props, ensure_ascii=False)
                     detail_props['properties'] = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
                     writer.writerow(detail_props)
-
         print(f"--- 事件细节 CSV 文件已保存至: {details_filename} ---")
 
         # --- 保存印象关系 CSV (Character -> Impression -> Event) ---
+        # ... (印象关系CSV保存逻辑，保持不变)
         with open(impressions_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['impression_id', 'character_app_id', 'event_app_id', 'impression_content', 'strength', 'timestamp', 'properties']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-
             for memory in memories:
                 event_app_id = memory.get('id')
                 if not event_app_id:
@@ -884,16 +878,13 @@ class GraphStore:
                 impression_content = memory.get('content', '')
                 timestamp = memory.get('time', {}).get('specific', datetime.now().isoformat())
                 strength = memory.get('importance', {}).get('score', 50)
-
                 for participant_id in participants:
                     char_app_id = participant_id
                     if not char_app_id:
                         continue
-
                     # 查找角色数据以计算强度
                     char_data = character_map.get(char_app_id, {})
                     calculated_strength = self.calculate_impression_strength(char_data, memory)
-                    
                     impression_id = str(uuid.uuid4())
                     impression_props = {
                         'impression_id': impression_id,
@@ -910,20 +901,18 @@ class GraphStore:
                     json_str_imp = json.dumps(dynamic_props_imp, ensure_ascii=False)
                     impression_props['properties'] = base64.b64encode(json_str_imp.encode('utf-8')).decode('utf-8')
                     writer.writerow(impression_props)
-
         print(f"--- 印象关系 CSV 文件已保存至: {impressions_filename} ---")
 
         # --- 保存非人物实体到事件的关系 CSV ---
+        # ... (实体-事件关系CSV保存逻辑，保持不变)
         with open(relationships_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['relation_id', 'entity_app_id', 'event_app_id', 'relationship_type', 'properties']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-
             for memory in memories:
                 event_app_id = memory.get('id')
                 if not event_app_id:
                     continue
-                
                 mem_location = memory.get('location')
                 if mem_location:
                     location_entity_app_id = None
@@ -942,7 +931,6 @@ class GraphStore:
                         json_str_rel = json.dumps({}, ensure_ascii=False)
                         rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
                         writer.writerow(rel_props)
-
                 for tag in memory.get('tags', []):
                     tag_entity_app_id = None
                     for ent in entities:
@@ -960,16 +948,43 @@ class GraphStore:
                         json_str_rel = json.dumps({}, ensure_ascii=False)
                         rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
                         writer.writerow(rel_props)
-
         print(f"--- 实体-事件关系 CSV 文件已保存至: {relationships_filename} ---")
 
+        # --- 新增：保存角色间关系 CSV ---
+        if character_to_character_relationships:
+            with open(char_to_char_relationships_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = ['relationship_id', 'from_character_app_id', 'to_character_app_id', 'relationship_type', 'description', 'strength', 'properties']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for rel in character_to_character_relationships:
+                    rel_props = {
+                        'relationship_id': rel.get('relationship_id', str(uuid.uuid4())),
+                        'from_character_app_id': rel.get('from_character_app_id'),
+                        'to_character_app_id': rel.get('to_character_app_id'),
+                        'relationship_type': rel.get('relationship_type', 'UNKNOWN'),
+                        'description': rel.get('description', ''),
+                        'strength': rel.get('strength', 50)
+                    }
+                    # 可以将其他关系属性存入properties
+                    dynamic_props_rel = {k: v for k, v in rel.items() if k not in ['relationship_id', 'from_character_app_id', 'to_character_app_id', 'relationship_type', 'description', 'strength', 'properties']}
+                    for k, v in dynamic_props_rel.items():
+                        if isinstance(v, (dict, list)):
+                            dynamic_props_rel[k] = json.dumps(v, ensure_ascii=False)
+                    json_str_rel = json.dumps(dynamic_props_rel, ensure_ascii=False)
+                    rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
+                    writer.writerow(rel_props)
+            print(f"--- 角色间关系 CSV 文件已保存至: {char_to_char_relationships_filename} ---")
+        else:
+            print("--- 没有角色间关系需要保存 ---")
+        # ---
+
         # --- 保存时间链 CSV ---
+        # ... (时间链CSV保存逻辑，保持不变)
         sorted_memories = sorted(memories, key=lambda m: (m.get('time', {}).get('age', 0), m.get('time', {}).get('specific', '')))
         with open(temporal_chain_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['current_event_app_id', 'next_event_app_id']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-
             for i in range(len(sorted_memories) - 1):
                 current_event_id = sorted_memories[i].get('id')
                 next_event_id = sorted_memories[i+1].get('id')
@@ -978,19 +993,24 @@ class GraphStore:
                         'current_event_app_id': current_event_id,
                         'next_event_app_id': next_event_id
                     })
-
         print(f"--- 时间链 CSV 文件已保存至: {temporal_chain_filename} ---")
 
-        return {
+        # --- 修改返回值，包含角色间关系文件名 ---
+        result = {
             "nodes_file": os.path.basename(nodes_filename),
             "impressions_file": os.path.basename(impressions_filename),
             "entity_event_relationships_file": os.path.basename(relationships_filename),
             "temporal_chain_file": os.path.basename(temporal_chain_filename),
             "details_file": os.path.basename(details_filename)
         }
-    # ---
+        if character_to_character_relationships:
+            result["char_to_char_relationships_file"] = os.path.basename(char_to_char_relationships_filename)
+        # ---
+        return result
 
-    # --- 从 CSV 导入节点 ---
+
+
+
     def import_nodes_from_csv(self, csv_filename: str) -> bool:
         if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
             print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
@@ -1100,9 +1120,7 @@ class GraphStore:
                 except Exception as e2:
                     print(f"基础查询从 {csv_filename} 导入节点也失败: {e2}")
                     return False
-    # ---
 
-    # --- 从 CSV 导入事件细节 ---
     def import_event_details_from_csv(self, csv_filename: str) -> bool:
         if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
             print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
@@ -1146,9 +1164,7 @@ class GraphStore:
             except Exception as e:
                 print(f"从 CSV {csv_filename} 导入事件细节失败: {e}")
                 return False
-    # ---
 
-    # --- 从 CSV 导入印象关系 ---
     def import_impressions_from_csv(self, csv_filename: str) -> bool:
         if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
             print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
@@ -1195,9 +1211,7 @@ class GraphStore:
             except Exception as e:
                 print(f"从 CSV {csv_filename} 导入印象关系失败: {e}")
                 return False
-    # ---
 
-    # --- 从 CSV 导入实体-事件关系 ---
     def import_entity_event_relationships_from_csv(self, csv_filename: str) -> bool:
         if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
             print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
@@ -1222,9 +1236,7 @@ class GraphStore:
             except Exception as e:
                 print(f"从 CSV {csv_filename} 导入实体-事件关系失败: {e}")
                 return False
-    # ---
 
-    # --- 从 CSV 导入时间链 ---
     def import_temporal_chain_from_csv(self, csv_filename: str) -> bool:
         if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
             print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
@@ -1248,8 +1260,65 @@ class GraphStore:
             except Exception as e:
                 print(f"从 CSV {csv_filename} 导入时间链失败: {e}")
                 return False
-    # ---
 
+    def import_character_to_character_relationships_from_csv(self, csv_filename: str) -> bool:
+        if not csv_filename or not os.path.exists(os.path.join(self.temp_csv_dir, csv_filename)):
+            print(f"错误：CSV 文件不存在: {os.path.join(self.temp_csv_dir, csv_filename)}")
+            return False
+        print(f"--- 开始从 CSV 文件导入角色间关系: {csv_filename} ---")
+        neo4j_import_path = f"/var/lib/neo4j/import/{csv_filename}"
+
+        with self.driver.session(database=self.database) as session:
+            try:
+                # 1. 确保角色节点存在 (MERGE)
+                # 2. 创建关系
+                query = f"""
+                LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
+                CALL (row) {{
+                    WITH row
+                    // 确保两端的角色节点存在
+                    MERGE (from_char:Character {{app_id: row.from_character_app_id}})
+                    MERGE (to_char:Character {{app_id: row.to_character_app_id}})
+                    // 创建或更新关系
+                    MERGE (from_char)-[r:HAS_RELATIONSHIP {{to_character_app_id: row.to_character_app_id}}]->(to_char)
+                    SET r.type = row.relationship_type,
+                        r.description = row.description,
+                        r.strength = toInteger(row.strength),
+                        r.last_updated = $timestamp,
+                        r.properties = row.properties
+                }}
+                RETURN count(r) AS importedRelationships;
+                """
+                result = session.run(query, timestamp=datetime.now().isoformat())
+                count = result.single()["importedRelationships"]
+                print(f"--- 成功从 CSV {csv_filename} 导入 {count} 条角色间关系 ---")
+                return True
+            except Exception as e:
+                print(f"使用复杂查询从 CSV {csv_filename} 导入角色间关系失败: {e}")
+                import traceback
+                traceback.print_exc()
+                # 尝试一个更简单的查询，如果上面的因为其他原因失败
+                try:
+                    query_simple = f"""
+                    LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
+                    MATCH (from_char:Character {{app_id: row.from_character_app_id}}), (to_char:Character {{app_id: row.to_character_app_id}})
+                    CALL apoc.create.relationship(from_char, 'HAS_RELATIONSHIP', {{
+                        type: row.relationship_type,
+                        description: row.description,
+                        strength: toInteger(row.strength),
+                        last_updated: $timestamp,
+                        properties: row.properties,
+                        to_character_app_id: row.to_character_app_id
+                    }}, to_char) YIELD rel
+                    RETURN count(rel) AS importedRelationships;
+                    """
+                    result_simple = session.run(query_simple, timestamp=datetime.now().isoformat())
+                    count_simple = result_simple.single()["importedRelationships"]
+                    print(f"--- 使用简化查询成功从 CSV {csv_filename} 导入 {count_simple} 条角色间关系 ---")
+                    return True
+                except Exception as e2:
+                    print(f"简化查询从 CSV {csv_filename} 导入角色间关系也失败: {e2}")
+                    return False
 
 if __name__ == "__main__":
     try:

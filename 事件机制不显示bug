@@ -1,0 +1,12 @@
+[main ca01c2e] debug:修复关联角色的角色-
+ 11 files changed, 781 insertions(+), 565 deletions(-)
+ create mode 100644 generated_stories/ee685c53-507f-4ef0-af7e-b22af3808646_extracted_entities_and_relationships_new_model.txt
+ create mode 100644 generated_stories/ee685c53-507f-4ef0-af7e-b22af3808646_lifespan_story_chaptered.txt
+ create mode 100644 generated_stories/ee685c53-507f-4ef0-af7e-b22af3808646_story_chapter_0_2.txt
+ create mode 100644 generated_stories/ee685c53-507f-4ef0-af7e-b22af3808646_story_chapter_12_17.txt
+ create mode 100644 generated_stories/ee685c53-507f-4ef0-af7e-b22af3808646_story_chapter_3_11.txt
+ delete mode 100644 generated_stories/fc55dd61-a9d2-4ca0-b54a-ebb9ae3623ee_extracted_entities_and_relationships_new_model.txt
+ delete mode 100644 generated_stories/fc55dd61-a9d2-4ca0-b54a-ebb9ae3623ee_lifespan_story_chaptered.txt
+ delete mode 100644 generated_stories/fc55dd61-a9d2-4ca0-b54a-ebb9ae3623ee_story_chapter_0_2.txt
+ delete mode 100644 generated_stories/fc55dd61-a9d2-4ca0-b54a-ebb9ae3623ee_story_chapter_12_17.txt
+ delete mode 100644 generated_stories/fc55dd61-a9d2-4ca0-b54a-ebb9ae3623ee_story_chapter_3_11.txt
