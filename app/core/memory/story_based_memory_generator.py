@@ -313,8 +313,15 @@ class StoryBasedMemoryGenerator:
         start_time = time.time()
 
         # 获取所有角色ID列表，用于验证参与者
+        all_char_map = {character_data['id']: character_data['name']} # 只存name用于日志
+        all_char_map.update({rc['id']: rc['name'] for rc in related_characters})
+        # --- 添加调试日志 ---
+        log_info(f"[DEBUG] extract_memories_from_lifespan_story: all_char_map (ID -> Name): {all_char_map}")
+
+        # 获取所有角色ID列表，用于验证参与者
         all_char_ids = {character_data['id']: character_data['name']}
         all_char_ids.update({rc['id']: rc['name'] for rc in related_characters})
+        log_info(f"[DEBUG] extract_memories_from_lifespan_story: all_char_ids (ID -> Name, for filtering): {all_char_ids}")
 
         system_prompt = f"""
         你是记忆考古学家，任务是仔细阅读以下关于"{character_data.get('name')}"的故事，并将故事中发生的每一个可记忆的事件、场景、对话、情绪、感觉、思考、行为等都识别出来，转换成详细的、结构化的记忆条目。
@@ -397,21 +404,49 @@ class StoryBasedMemoryGenerator:
                     log_warning(f"跳过非字典格式的记忆: {raw_mem}")
                     continue
 
+                # --- 添加调试日志 ---
+                raw_participants_names = raw_mem.get("participants", [])
+                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} (Title: {raw_mem.get('title', 'N/A')[:20]}...) - Raw Participants (Names): {raw_participants_names}")
+                # ---
+
                 memory_id = str(uuid.uuid4())
                 processed_mem = raw_mem.copy()
                 processed_mem["id"] = memory_id
 
                 # 验证并过滤参与者
-                participants = processed_mem.get("participants", [])
-                if not isinstance(participants, list):
-                    participants = [participants] if participants else []
-                # 只保留存在于 all_char_ids 中的ID
-                filtered_participants = [pid for pid in participants if pid in all_char_ids]
-                processed_mem["participants"] = filtered_participants
+                participants_names = processed_mem.get("participants", [])
+                if not isinstance(participants_names, list):
+                    participants_names = [participants_names] if participants_names else []
+                # --- 添加调试日志 ---
+                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - Participants before filtering (Names): {participants_names}")
+                # ---
+
+                # *** 修正：将参与者名字转换为ID ***
+                filtered_participant_ids = []
+                for name in participants_names:
+                    # 查找名字对应的ID
+                    found_id = None
+                    for cid, cname in all_char_map.items():
+                        if cname == name:
+                            found_id = cid
+                            break
+                    if found_id:
+                        filtered_participant_ids.append(found_id)
+                        log_debug(f"[DEBUG] Found ID {found_id} for name {name}")
+                    else:
+                        log_warning(f"[DEBUG] Name {name} from memory participants not found in all_char_map. Skipping.")
+
+                # --- 添加调试日志 ---
+                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - Participants after filtering (Names->IDs): {filtered_participant_ids}")
+                # ---
+                processed_mem["participants"] = filtered_participant_ids
 
                 # 如果没有参与者，至少包含主角色
                 if not processed_mem["participants"]:
                     processed_mem["participants"] = [character_data.get("id")]
+                    # --- 添加调试日志 ---
+                    log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - No valid participants after filtering, set to main character ID: {[character_data.get('id')]}")
+                    # ---
 
                 tags = processed_mem.get("tags", [])
                 if not isinstance(tags, list):
@@ -469,6 +504,7 @@ class StoryBasedMemoryGenerator:
         with open(extraction_filename, "w", encoding="utf-8") as f:
             f.write(json.dumps({"entities": entities, "relationships": relationships}, ensure_ascii=False, indent=2))
         log_success(f"从故事中提取的实体和关系已保存到 {extraction_filename}")
+
 
         # --- 修改：将数据保存为新模型的CSV并导入 ---
         if graph_store:
