@@ -138,37 +138,37 @@ cd /CharacterLLM_framework/frontend/character-llm-frontend
 
 # 检查前端文件是否有更新
 # 注意：HEAD@{1} 在非 git pull 环境下可能无效，这里假设代码已更新
-# if git diff --name-only HEAD@{1} HEAD | grep -q "^frontend/"; then
-#     echo "📦 前端有更新，重新构建..."
-#     # ... (构建逻辑)
-# # else
-# #     echo "ℹ️  前端无更新，跳过构建"
-# # fi
+if git diff --name-only HEAD@{1} HEAD | grep -q "^frontend/"; then
+     echo "📦 前端有更新，重新构建..."
+     # ... (构建逻辑)
+else
+    echo "ℹ️  前端无更新，跳过构建"
+fi
 # 简化处理：总是尝试构建（如果需要的话）或者跳过
 echo "ℹ️  检查前端构建必要性 (当前逻辑为简化处理，如需精确判断，请启用 Git diff 逻辑)..."
 # 假设前端未更新，跳过构建
 echo "ℹ️  假设前端未更新，跳过构建 (如需构建，请修改脚本或手动执行)"
 # 如果确实需要构建，取消下面的注释
-# echo "📦 前端有更新，重新构建..."
-# # 安装依赖（如果 package.json 有更新）
-# if [ -f package-lock.json ] && git diff --name-only HEAD@{1} HEAD | grep -q "package-lock.json"; then
-#     echo "📦 安装前端依赖..."
-#     npm install --legacy-peer-deps
-# elif [ -f yarn.lock ] && git diff --name-only HEAD@{1} HEAD | grep -q "yarn.lock"; then
-#     echo "📦 安装前端依赖..."
-#     yarn install
-# elif git diff --name-only HEAD@{1} HEAD | grep -q "package.json"; then
-#     echo "📦 安装前端依赖..."
-#     npm install --legacy-peer-deps
-# fi
-# # 构建前端
-# echo "🔨 构建前端..."
-# npm run build
-# # 部署到 Nginx
-# echo "📋 部署前端文件..."
-# rm -rf /usr/share/nginx/html/*
-# cp -r dist/* /usr/share/nginx/html/
-# echo "✅ 前端已重新构建和部署"
+echo "📦 前端有更新，重新构建..."
+# 安装依赖（如果 package.json 有更新）
+if [ -f package-lock.json ] && git diff --name-only HEAD@{1} HEAD | grep -q "package-lock.json"; then
+    echo "📦 安装前端依赖..."
+    npm install --legacy-peer-deps
+elif [ -f yarn.lock ] && git diff --name-only HEAD@{1} HEAD | grep -q "yarn.lock"; then
+    echo "📦 安装前端依赖..."
+        yarn install
+elif git diff --name-only HEAD@{1} HEAD | grep -q "package.json"; then
+    echo "📦 安装前端依赖..."
+    npm install --legacy-peer-deps
+fi
+# 构建前端
+echo "🔨 构建前端..."
+npm run build
+# 部署到 Nginx
+echo "📋 部署前端文件..."
+rm -rf /usr/share/nginx/html/*
+cp -r dist/* /usr/share/nginx/html/
+ echo "✅ 前端已重新构建和部署"
 
 # 更新 Nginx 配置（无论前端是否更新都要检查）
 echo "📋 更新 Nginx 配置..."

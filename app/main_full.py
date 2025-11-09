@@ -134,9 +134,10 @@ class CharacterResponse(BaseModel):
     background: str
 
 class ChatRequest(BaseModel):
-    character_id: str
+    character_id: str # 主角色ID
     message: str
     conversation_history: Optional[List[Dict[str, str]]] = None
+    user_character_id: Optional[str] = None # 新增：用户扮演的角色ID
 
 class ChatResponse(BaseModel):
     message: str
@@ -281,6 +282,17 @@ async def chat_with_character(request: ChatRequest):
         raise HTTPException(status_code=404, detail="角色不存在")
     character_data = characters[request.character_id]
 
+    # 获取用户扮演的角色数据（如果提供了ID）
+    user_character_data = None
+    if request.user_character_id:
+        user_character_data = characters.get(request.user_character_id)
+        if not user_character_data:
+            # 如果指定的用户角色ID不存在，可以选择报错或忽略
+            # 这里选择忽略，当作普通用户
+            request.user_character_id = None
+            user_character_data = None
+
+    # 定义内部生成器函数
     async def event_generator():
         try:
             start_time = time.time()
@@ -291,24 +303,63 @@ async def chat_with_character(request: ChatRequest):
                 character_id=request.character_id,
                 character_data=character_data,
                 user_input=request.message,
-                conversation_history=request.conversation_history
+                conversation_history=request.conversation_history,
+                user_character_data=user_character_data # 传递用户扮演的角色数据
             ):
                 response_count += 1
-                current_resp = ChatResponse(
-                    message=flow_resp["content"],
-                    type=flow_resp["type"],
-                    memories=None,
-                    timestamp=flow_resp.get("timestamp", None)
-                )
+                # --- 修改：处理新的返回格式 ---
+                if flow_resp["type"] == "supplementary":
+                    # supplementary 响应现在是一个字典
+                    # **修正：检查类型，确保是字典**
+                    if isinstance(flow_resp["content"], dict):
+                        supplementary_data = flow_resp["content"] # content 现在是字典
+                        current_resp = ChatResponse(
+                            message=supplementary_data["content"], # 从字典中提取实际消息
+                            type=flow_resp["type"],
+                            memories=None, # 初始化为 None
+                            timestamp=flow_resp.get("timestamp", None)
+                        )
+                        raw_memories = supplementary_data.get("memories", [])
+                    else:
+                        # 如果不是字典，说明返回的是字符串，可能是错误情况
+                        print(f"⚠️  _generate_supplementary_response 返回了非字典格式: {type(flow_resp['content'])}, 值: {flow_resp['content'][:100]}...")
+                        current_resp = ChatResponse(
+                            message=flow_resp["content"], # 直接使用字符串作为消息
+                            type=flow_resp["type"],
+                            memories=None,
+                            timestamp=flow_resp.get("timestamp", None)
+                        )
+                        raw_memories = [] # 没有记忆可处理
+                else:
+                    # 其他类型响应保持不变
+                    current_resp = ChatResponse(
+                        message=flow_resp["content"],
+                        type=flow_resp["type"],
+                        memories=None,
+                        timestamp=flow_resp.get("timestamp", None)
+                    )
+                    raw_memories = flow_resp.get("memories", [])
+                # --- 结束修改 ---
 
-                if "memories" in flow_resp and flow_resp["memories"]:
-                    processed_mem = []
-                    for mem in flow_resp["memories"]:
+                # --- 修复开始 (确保 processed_memories 在循环外部定义) ---
+                # 这部分逻辑是处理 raw_memories 的，无论上面是 if 还是 else 都会执行
+                # 所以它应该和 if/else 同级，而不是缩进到 else 内部
+                if raw_memories:
+                    processed_memories = [] # 重命名变量以避免与循环变量混淆，并在循环外部初始化
+                    for mem in raw_memories:
                         for key in ["time", "emotion", "importance", "behavior_impact", "trigger_system", "memory_distortion"]:
                             if key in mem and isinstance(mem[key], str):
-                                mem[key] = json.loads(mem[key])
-                        processed_mem.append(MemoryResponse(**mem))
-                    current_resp.memories = processed_mem
+                                try:
+                                    mem[key] = json.loads(mem[key])
+                                except json.JSONDecodeError:
+                                    # 如果解析失败，保留原字符串
+                                    pass
+                        processed_memories.append(MemoryResponse(**mem))
+                    current_resp.memories = processed_memories
+                else:
+                    # 如果没有 memories，确保 current_resp.memories 是 None 或空列表
+                    current_resp.memories = []
+                # --- 修复结束 ---
 
                 response_data = current_resp.dict()
                 response_json = json.dumps(response_data, ensure_ascii=False)
@@ -319,7 +370,7 @@ async def chat_with_character(request: ChatRequest):
                     flow_resp['type'],
                     request.character_id,
                     request.message,
-                    flow_resp['content'],
+                    current_resp.message, # 记录实际的消息内容
                     flow_resp.get('timestamp', 0),
                     len(current_resp.memories) if current_resp.memories else 0
                 )
@@ -334,8 +385,9 @@ async def chat_with_character(request: ChatRequest):
             error_json = json.dumps(error_data, ensure_ascii=False)
             yield f" {error_json}\n\n"
 
+    # 调用并返回生成器
     return StreamingResponse(event_generator(), media_type="text/event-stream")
-
+    
 @app.get("/api/v1/chat/{character_id}/history")
 async def get_chat_history(character_id: str):
     return {"message": "对话历史功能暂未实现", "character_id": character_id, "history": []}

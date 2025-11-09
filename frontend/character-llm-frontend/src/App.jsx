@@ -14,6 +14,7 @@ function App() {
   const [chatHistory, setChatHistory] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false); // 新增：处理状态
   const chatContainerRef = useRef(null); // 新增：滚动引用
+  const [selectedUserCharacter, setSelectedUserCharacter] = useState(''); // 新增：用户扮演的角色ID
 
   useEffect(() => {
     loadCharacters();
@@ -133,7 +134,8 @@ function App() {
         body: JSON.stringify({
           character_id: selectedCharacter,
           message: userMessage,
-          conversation_history: cleanHistory
+          conversation_history: cleanHistory,
+          user_character_id: selectedUserCharacter || null
         })
       });
 
@@ -425,27 +427,51 @@ function App() {
           )}
 
           {activeTab === 'chat' && (
-            <div className="tab-content">
-              <div className="card">
-                <h2 className="card-title">智能对话</h2>
-                
-                <div className="form-group">
-                  <label>选择角色</label>
-                  <select
-                    value={selectedCharacter}
-                    onChange={(e) => {
-                      setSelectedCharacter(e.target.value);
-                      setChatHistory([]);
-                    }}
-                  >
-                    <option value="">请选择一个角色</option>
-                    {characters.map((char) => (
-                      <option key={char.id} value={char.id}>
-                        {char.name} - {char.occupation}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <div className="tab-content">
+                    <div className="card">
+                      <h2 className="card-title">智能对话</h2>
+
+                      <div className="form-group">
+                        <label>选择主角色</label>
+                        <select
+                          value={selectedCharacter}
+                          onChange={(e) => {
+                            setSelectedCharacter(e.target.value);
+                            setChatHistory([]);
+                            // 当主角色改变时，清空用户角色选择
+                            setSelectedUserCharacter('');
+                          }}
+                        >
+                          <option value="">请选择一个主角色</option>
+                          {characters.map((char) => (
+                            <option key={char.id} value={char.id}>
+                              {char.name} - {char.occupation}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* 新增：选择用户扮演的角色 */}
+                      <div className="form-group">
+                        <label>选择用户扮演的角色 (可选)</label>
+                        <select
+                          value={selectedUserCharacter}
+                          onChange={(e) => setSelectedUserCharacter(e.target.value)}
+                          disabled={!selectedCharacter} // 只有选了主角色才能选用户角色
+                        >
+                          <option value="">以默认用户身份对话</option>
+                          {/* 只显示与当前主角色相关的角色 */}
+                          {selectedCharacter &&
+                            characters
+                              .filter(char => char.id !== selectedCharacter) // 排除主角色自己
+                              .map((char) => (
+                                <option key={char.id} value={char.id}>
+                                  {char.name} - {char.occupation}
+                                </option>
+                              ))}
+                        </select>
+                      </div>
+                      {/* --- */}
 
                 <div className="chat-container">
                   <div className="chat-history" ref={chatContainerRef}>

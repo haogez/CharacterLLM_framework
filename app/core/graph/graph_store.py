@@ -21,6 +21,7 @@
 import os
 import json
 import uuid
+import re
 import csv
 import base64
 from datetime import datetime, timedelta
@@ -336,34 +337,29 @@ class GraphStore:
     def create_character_event_impression_triple(self, character_data: Dict[str, Any], event_data: Dict[str, Any], impression_content: str) -> bool:
         """
         为单个角色创建完整的"角色->印象->事件"结构
+        impression_content: 已经根据角色视角、性格、时间等处理过的印象内容
         """
         character_app_id = character_data.get("id")
         event_app_id = event_data.get("id")
-        
         if not all([character_app_id, event_app_id, impression_content]):
             print("错误：创建角色-印象-事件三元组缺少必要数据")
             return False
-            
         # 1. 确保角色和事件节点存在
         if not self.create_character_node(character_data):
             return False
-            
-        if not self.create_event_node(event_data):
+        if not self.create_event_node(event_data): # 事件节点将包含原始内容
             return False
-            
-        # 2. 创建印象数据
+        # 2. 创建印象数据 (impression_content 应该已经是处理过的)
         impression_data = {
             "id": str(uuid.uuid4()),
             "source_character_app_id": character_app_id,
             "event_app_id": event_app_id,
-            "content": impression_content,
+            "content": impression_content, # 使用已处理的内容
             "timestamp": datetime.now().isoformat()
         }
-        
         # 3. 创建印象节点（使用新的带强度计算的方法）
         if not self.create_impression_node(impression_data, character_data, event_data):
             return False
-            
         # 4. 建立关系
         with self.driver.session(database=self.database) as session:
             try:
@@ -376,7 +372,6 @@ class GraphStore:
                     char_app_id=character_app_id,
                     impression_app_id=impression_data["id"]
                 )
-                
                 # 印象 -> 事件
                 session.run(
                     """
@@ -386,7 +381,6 @@ class GraphStore:
                     impression_app_id=impression_data["id"],
                     event_app_id=event_app_id
                 )
-                
                 print(f"--- 角色 {character_app_id} -> 印象 -> 事件 {event_app_id} 三元组创建成功 ---")
                 return True
             except Exception as e:
@@ -715,7 +709,6 @@ class GraphStore:
         # --- 新增：角色间关系 CSV 文件名 ---
         char_to_char_relationships_filename = os.path.join(self.temp_csv_dir, f"character_to_character_relationships_{character_id}.csv")
         # ---
-
         # 创建一个角色ID映射表，用于去重
         all_character_ids = set()
         all_character_ids.add(main_character.get('id'))
@@ -731,7 +724,6 @@ class GraphStore:
         character_map[main_character.get('id')] = main_character
         for rc in related_characters:
             character_map[rc.get('id')] = rc
-
         # --- 保存节点 CSV (Character, Event, 其他实体) ---
         # ... (节点CSV保存逻辑，保持不变)
         with open(nodes_filename, 'w', newline='', encoding='utf-8') as csvfile:
@@ -801,10 +793,10 @@ class GraphStore:
                     'app_id': memory.get('id', ''),
                     'entity_type': 'Event',
                     'event_title': memory.get('title', ''),
-                    'event_content': memory.get('content', ''),
+                    'event_content': memory.get('content', ''), # **事件节点使用原文**
                     'event_age': memory.get('time', {}).get('age', ''),
                     'event_importance': memory.get('importance', {}).get('score', ''),
-                    'description': memory.get('content', '')[:100]
+                    'description': memory.get('content', '')[:100] # **事件节点的描述也使用原文**
                 }
                 dynamic_props_mem = {k: v for k, v in memory.items() if k not in ['title', 'content', 'time', 'importance', 'id', 'app_id', 'node_id', 'label', 'name', 'entity_type', 'event_title', 'event_content', 'event_age', 'event_importance', 'description', 'properties']}
                 for k, v in dynamic_props_mem.items():
@@ -865,7 +857,7 @@ class GraphStore:
         print(f"--- 事件细节 CSV 文件已保存至: {details_filename} ---")
 
         # --- 保存印象关系 CSV (Character -> Impression -> Event) ---
-        # ... (印象关系CSV保存逻辑，保持不变)
+        # ... (印象关系CSV保存逻辑，**修改**如下) ...
         with open(impressions_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['impression_id', 'character_app_id', 'event_app_id', 'impression_content', 'strength', 'timestamp', 'properties']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -875,22 +867,25 @@ class GraphStore:
                 if not event_app_id:
                     continue
                 participants = memory.get('participants', [])
-                impression_content = memory.get('content', '')
+                original_content = memory.get('content', '') # 获取原始事件内容
                 timestamp = memory.get('time', {}).get('specific', datetime.now().isoformat())
-                strength = memory.get('importance', {}).get('score', 50)
+                # **修改：为每个参与者生成一个印象**
                 for participant_id in participants:
                     char_app_id = participant_id
                     if not char_app_id:
                         continue
-                    # 查找角色数据以计算强度
+                    # 获取角色数据
                     char_data = character_map.get(char_app_id, {})
+                    # **调用新方法处理印象内容**
+                    processed_impression_content = self._process_impression_content(original_content, char_data, memory)
+                    # 计算强度
                     calculated_strength = self.calculate_impression_strength(char_data, memory)
                     impression_id = str(uuid.uuid4())
                     impression_props = {
                         'impression_id': impression_id,
                         'character_app_id': char_app_id,
                         'event_app_id': event_app_id,
-                        'impression_content': impression_content,
+                        'impression_content': processed_impression_content, # **使用处理后的内容**
                         'strength': calculated_strength,
                         'timestamp': timestamp,
                     }
@@ -1267,11 +1262,8 @@ class GraphStore:
             return False
         print(f"--- 开始从 CSV 文件导入角色间关系: {csv_filename} ---")
         neo4j_import_path = f"/var/lib/neo4j/import/{csv_filename}"
-
         with self.driver.session(database=self.database) as session:
             try:
-                # 1. 确保角色节点存在 (MERGE)
-                # 2. 创建关系
                 query = f"""
                 LOAD CSV WITH HEADERS FROM 'file://{neo4j_import_path}' AS row
                 CALL (row) {{
@@ -1287,7 +1279,7 @@ class GraphStore:
                         r.last_updated = $timestamp,
                         r.properties = row.properties
                 }}
-                RETURN count(r) AS importedRelationships;
+                RETURN count(*) AS importedRelationships; /* 使用 count(*) 替代 count(r) */
                 """
                 result = session.run(query, timestamp=datetime.now().isoformat())
                 count = result.single()["importedRelationships"]
@@ -1319,6 +1311,178 @@ class GraphStore:
                 except Exception as e2:
                     print(f"简化查询从 CSV {csv_filename} 导入角色间关系也失败: {e2}")
                     return False
+
+    def get_relationship_between_characters(self, from_char_id: str, to_char_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取 from_char_id 角色对 to_char_id 角色的关系信息。
+        """
+        with self.driver.session(database=self.database) as session:
+            try:
+                result = session.run(
+                    """
+                    MATCH (c1:Character {app_id: $from_char_id})-[r:HAS_RELATIONSHIP {to_character_app_id: $to_char_id}]->(c2:Character {app_id: $to_char_id})
+                    RETURN r
+                    """,
+                    from_char_id=from_char_id,
+                    to_char_id=to_char_id
+                )
+                record = result.single()
+                if record:
+                    rel_props = dict(record["r"])
+                    # 解析JSON字段（如果有的话）
+                    for key, value in rel_props.items():
+                        if isinstance(value, str):
+                            try:
+                                rel_props[key] = json.loads(value)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                    return rel_props
+                else:
+                    print(f"--- 未找到角色 {from_char_id} 对 {to_char_id} 的关系 ---")
+                    return None
+            except Exception as e:
+                print(f"获取角色 {from_char_id} -> {to_char_id} 的关系失败: {e}")
+                return None
+
+    # --- 新增：处理印象内容的辅助方法 ---
+    # --- 修改：根据角色性格、事件性质、时间因素处理印象内容的方法 ---
+    def _process_impression_content(self, original_content: str, character_data: Dict[str, Any], memory_data: Dict[str, Any]) -> str:
+        """
+        根据角色性格、事件性质、时间因素处理原始事件内容，生成角色对事件的印象（含压缩、细节遗忘、印象扭曲）。
+        核心逻辑：性格特质与事件性质为主要影响因素，时间作为衰减调节因素，通过多层量化模型实现印象生成。
+        """
+        # -------------------------- 1. 基础参数提取 --------------------------
+        # 1.1 角色性格特质（基于大五人格模型，0-100分，从character_data获取）
+        personality = character_data.get('personality', {})
+        neuroticism = personality.get('neuroticism', 50)  # 神经质（情绪敏感度）
+        conscientiousness = personality.get('conscientiousness', 50)  # 尽责性（严谨程度）
+        openness = personality.get('openness', 50)  # 开放性（细节关注度）
+        extraversion = personality.get('extraversion', 50)  # 外向性（大大咧咧程度）
+
+        # 1.2 事件性质参数（从memory_data获取，0-10分）
+        event_nature = memory_data.get('event_nature', {})
+        emotional_intensity = event_nature.get('emotional_intensity', memory_data.get('emotion', {}).get('intensity', 5))
+        importance = memory_data.get('importance', {}).get('score', 5)
+        event_type = event_nature.get('type', 'neutral')
+
+        # 1.3 时间参数（从memory_data获取）
+        # **修改：优先使用 age 差计算天数**
+        memory_time_info = memory_data.get('time', {})
+        event_age_at_occurrence = memory_time_info.get('age', character_data.get('age', 0)) # 事件发生时角色年龄
+        current_character_age = character_data.get('age', 0) # 角色当前设定年龄
+        # 计算年龄差（年）
+        age_difference_years = current_character_age - event_age_at_occurrence
+        # 将年龄差转换为天数（假设一年约365天）
+        # 这是一个估算，但比解析字符串更可靠
+        days_passed = max(0, int(age_difference_years * 365))
+        print(f"  [DEBUG] 计算时间衰减: 事件时年龄 {event_age_at_occurrence}, 当前年龄 {current_character_age}, 年龄差 {age_difference_years}, 估算天数 {days_passed}")
+
+        # **备选：如果 memory.time.age 不存在或无效，再尝试使用 specific_time_str**
+        if days_passed <= 0:
+            specific_time_str = memory_time_info.get('specific', '').strip()
+            if specific_time_str:
+                try:
+                    # 尝试解析 specific_time_str 为 datetime 对象
+                    # 这里需要一个更灵活的解析器，但为了通用性，我们先尝试 ISO 格式
+                    # 如果不是 ISO 格式，解析会失败，然后使用 importance 作为 fallbac
+                    iso_time_str = specific_time_str.replace('年', '-').replace('月', '-').replace('日', 'T') + '00:00:00'
+                    event_time = datetime.fromisoformat(iso_time_str)
+                    current_time = datetime.now()
+                    calculated_days_passed = (current_time - event_time).days
+                    calculated_days_passed = max(0, calculated_days_passed) # 确保不为负数
+                    # 如果通过 specific_time_str 计算出的天数更合理，则使用它
+                    if calculated_days_passed > 0:
+                        days_passed = calculated_days_passed
+                        print(f"  [DEBUG] 通过 specific_time 重新计算天数: {days_passed}")
+                except ValueError:
+                    # 如果解析失败，使用 importance 估算作为备选
+                    days_passed = max(0, int((10 - importance) * 365 / 9))
+                    print(f"  [DEBUG] 无法解析 specific_time: '{specific_time_str}', 使用基于 importance 的估算: {days_passed} 天")
+            else:
+                # 如果 specific_time_str 也为空，使用 importance 估算
+                days_passed = max(0, int((10 - importance) * 365 / 9))
+                print(f"  [DEBUG] 未找到 specific_time, 使用基于 importance 的估算: {days_passed} 天")
+
+
+        # -------------------------- 2. 核心影响指标计算 --------------------------
+        # 2.1 性格特质量化：细致度（反应该人是否容易记住细节，0-1）
+        detail_orientation = (
+            0.3 * neuroticism +
+            0.4 * conscientiousness +
+            0.2 * openness -
+            0.1 * extraversion
+        ) / 100
+        detail_orientation = max(0.1, min(detail_orientation, 0.9))
+
+        # 2.2 事件性质量化：事件显著性（反应该事件本身是否容易被记住，0-1）
+        event_saliency = (0.6 * emotional_intensity + 0.4 * importance) / 10
+        event_saliency = max(0.1, min(event_saliency, 0.9))
+
+        # 2.3 时间衰减量化：记忆留存衰减系数（0-1）
+        time_decay = min(1.0, max(0.05, float(2.71828 **(-0.005 * days_passed))))
+
+        # 2.4 综合记忆保留强度（决定整体细节保留比例，0-1）
+        retention_strength = (0.5 * detail_orientation + 0.5 * event_saliency) * time_decay
+
+
+        # -------------------------- 3. 内容基础压缩（基于保留强度） --------------------------
+        compression_ratio = 0.2 + 0.8 * retention_strength
+        original_length = len(original_content)
+        base_retain_length = int(original_length * compression_ratio)
+        base_retain_length = max(10, min(base_retain_length, original_length))
+
+        core_pattern = re.compile(r'(.*?[，。；？！])')
+        sentences = core_pattern.findall(original_content)
+        if not sentences:
+            sentences = [original_content]
+        sorted_sentences = sorted(sentences, key=lambda x: len(x), reverse=True)  # 长句更可能含核心信息
+        core_content = ''.join(sorted_sentences[:int(len(sentences)*compression_ratio)])
+        compressed_content = core_content[:base_retain_length]
+
+
+        # -------------------------- 4. 细节类型筛选（基于性格特质） --------------------------
+        detail_types = {
+            'dialogue': re.compile(r'“.*?”|‘.*?’'),
+            'objects': re.compile(r'[那这某]+[一-龥a-zA-Z0-9]*[个只件台辆]{1}[一-龥a-zA-Z0-9]*'),
+            'scene': re.compile(r'[早中晚昨今明]{1}.*?[处地场合]{1}|[0-9]{1,2}[点分]{1}'),
+            'emotion': re.compile(r'[开心|难过|生气|害怕|惊讶]{1}')
+        }
+
+        detail_retain_probs = {
+            'dialogue': 0.3 + detail_orientation * 0.6,
+            'objects': 0.2 + detail_orientation * 0.7,
+            'scene': 0.6 + detail_orientation * 0.3,
+            'emotion': 0.4 + event_saliency * 0.5
+        }
+
+        filtered_content = compressed_content
+        for detail_name, pattern in detail_types.items():
+            if detail_retain_probs[detail_name] < 0.5:
+                replacement = {
+                    'dialogue': '说了些话',
+                    'objects': '某个东西',
+                    'scene': '某个时候',
+                    'emotion': '有些情绪'
+                }[detail_name]
+                filtered_content = pattern.sub(replacement, filtered_content)
+
+
+        # -------------------------- 5. 印象扭曲（基于性格与事件类型） --------------------------
+        distortion_factor = (0.4 * neuroticism + 0.3 * (100 - conscientiousness) + 0.3 * openness) / 100
+
+        distorted_content = filtered_content
+        if distortion_factor > 0.6:
+            if event_type == 'negative':
+                distorted_content = re.sub(r'有点', '非常', distorted_content)
+                distorted_content = re.sub(r'可能', '肯定', distorted_content)
+            elif event_type == 'positive':
+                distorted_content = re.sub(r'还不错', '特别好', distorted_content)
+            distorted_content = f"好像{distorted_content}，我记得大概是这样..."
+        elif 0.3 < distortion_factor <= 0.6:
+            if extraversion > 70:
+                distorted_content = re.sub(r'，.*?[。；]', '。', distorted_content)
+
+        return distorted_content
 
 if __name__ == "__main__":
     try:

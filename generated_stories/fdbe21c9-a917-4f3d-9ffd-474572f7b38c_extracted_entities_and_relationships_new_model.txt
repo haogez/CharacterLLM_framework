@@ -1,0 +1,807 @@
+{
+  "entities": [
+    {
+      "app_id": "fc9a8c9e-9c97-4406-a078-06fc4c9c79db",
+      "name": "家中婴儿房",
+      "type": "Place",
+      "description": "事件 '白佳唯初生温馨的婴儿房' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "7714592a-eba8-456a-9340-fb2af3b42ad0",
+      "name": "出生",
+      "type": "Concept",
+      "description": "与事件 '白佳唯初生温馨的婴儿房' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "45082aaf-fb04-4526-a4e2-dd2aee13a057",
+      "name": "温馨",
+      "type": "Concept",
+      "description": "与事件 '白佳唯初生温馨的婴儿房' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b75d9f53-59ea-47a3-ad62-54fe83dbfe5c",
+      "name": "安全感",
+      "type": "Concept",
+      "description": "与事件 '白佳唯初生温馨的婴儿房' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "8d421ccc-30cf-4f4a-ab44-1e49fe6c9343",
+      "name": "医院与家中",
+      "type": "Place",
+      "description": "事件 '父亲白建华初为人父的期待与紧张' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "79cb7e78-adcc-4cf1-b7de-1bb6311987b4",
+      "name": "父爱",
+      "type": "Concept",
+      "description": "与事件 '父亲白建华初为人父的期待与紧张' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d6632e3c-bdd6-431d-ae0d-848d04d6594c",
+      "name": "期待",
+      "type": "Concept",
+      "description": "与事件 '父亲白建华初为人父的期待与紧张' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "33ba3873-f7e0-4c53-9f2f-08f0c4004ee6",
+      "name": "陪伴",
+      "type": "Concept",
+      "description": "与事件 '父亲白建华初为人父的期待与紧张' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "365c0f50-adeb-45c9-b5ff-9e1d960e1ae4",
+      "name": "家中婴儿房",
+      "type": "Place",
+      "description": "事件 '母亲陈婉婷温柔照料新生儿' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "ca7fa3ba-3328-4234-98f3-d7a29a84770d",
+      "name": "母爱",
+      "type": "Concept",
+      "description": "与事件 '母亲陈婉婷温柔照料新生儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "faec7be8-066f-4670-8b57-720bbbc21b1e",
+      "name": "温柔照料",
+      "type": "Concept",
+      "description": "与事件 '母亲陈婉婷温柔照料新生儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6114e7bf-78b4-4699-9f72-e27c9d507e03",
+      "name": "安全感",
+      "type": "Concept",
+      "description": "与事件 '母亲陈婉婷温柔照料新生儿' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4211d742-5320-4a7b-8c5e-2352d07bf790",
+      "name": "母亲怀抱中",
+      "type": "Place",
+      "description": "事件 '白佳唯对父母声音和体温的感知' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "0f4491b0-69c9-4f65-bb96-149ca563cb8a",
+      "name": "感官体验",
+      "type": "Concept",
+      "description": "与事件 '白佳唯对父母声音和体温的感知' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3db5fe88-bc4c-4923-b817-9070998edd46",
+      "name": "亲子关系",
+      "type": "Concept",
+      "description": "与事件 '白佳唯对父母声音和体温的感知' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f1a9b230-fdc2-4f0b-9e62-6caa91b3bf01",
+      "name": "安全感",
+      "type": "Concept",
+      "description": "与事件 '白佳唯对父母声音和体温的感知' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "cd301239-f3b4-470c-bf19-e5bbeb15ff71",
+      "name": "家中",
+      "type": "Place",
+      "description": "事件 '邻居陈婉仪和志愿者陈瑾萱的关怀访问' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "a97ebdac-71e6-4f5c-b71d-8b3c801fd20f",
+      "name": "社区",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉仪和志愿者陈瑾萱的关怀访问' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "5fcd68cc-fd3f-490b-8b74-183660791678",
+      "name": "关怀",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉仪和志愿者陈瑾萱的关怀访问' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a30b4646-303e-4a47-a3fe-9c84d6611fa1",
+      "name": "支持",
+      "type": "Concept",
+      "description": "与事件 '邻居陈婉仪和志愿者陈瑾萱的关怀访问' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "19e41223-dc54-48d8-8a35-eb62f91fcbea",
+      "name": "家中及学校",
+      "type": "Place",
+      "description": "事件 '白佳唯童年期的复杂内心与外表伪装' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "56a8184b-d8e1-4f87-9f22-1d9cd4bab2f3",
+      "name": "内心矛盾",
+      "type": "Concept",
+      "description": "与事件 '白佳唯童年期的复杂内心与外表伪装' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4148fb4c-9930-4a38-81a5-5101425faec4",
+      "name": "自我保护",
+      "type": "Concept",
+      "description": "与事件 '白佳唯童年期的复杂内心与外表伪装' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d9cbac1b-f1ac-4af0-b1f4-ba7bcb09d705",
+      "name": "童年",
+      "type": "Concept",
+      "description": "与事件 '白佳唯童年期的复杂内心与外表伪装' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "61bd6daf-ed36-484e-8e00-4211ca8f4df3",
+      "name": "家中",
+      "type": "Place",
+      "description": "事件 '白佳唯对父亲复杂情绪' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "243b7767-6bde-4ae3-9f88-e1c831889570",
+      "name": "家庭冲突",
+      "type": "Concept",
+      "description": "与事件 '白佳唯对父亲复杂情绪' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d0ecbf38-02dd-49be-8b6a-2b29569a1a08",
+      "name": "情绪疏离",
+      "type": "Concept",
+      "description": "与事件 '白佳唯对父亲复杂情绪' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "447d8719-3047-4c78-8dc3-429ef0fc9dab",
+      "name": "童年阴影",
+      "type": "Concept",
+      "description": "与事件 '白佳唯对父亲复杂情绪' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c8de370c-93f1-4b9c-8f7d-e50e13751c79",
+      "name": "学校",
+      "type": "Place",
+      "description": "事件 '学校生活中活泼开朗的白佳唯' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "99af4277-a1b1-4a9e-950c-74de2e6bbe65",
+      "name": "学校生活",
+      "type": "Concept",
+      "description": "与事件 '学校生活中活泼开朗的白佳唯' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f08b8855-b5bc-41e2-abc2-cbb339d23b3f",
+      "name": "社交",
+      "type": "Concept",
+      "description": "与事件 '学校生活中活泼开朗的白佳唯' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "bd9146cb-8ddd-4f6f-b855-ae8da8d2c034",
+      "name": "伪装",
+      "type": "Concept",
+      "description": "与事件 '学校生活中活泼开朗的白佳唯' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d8ea2889-dfa8-4fcb-ab3a-d820c51ac6e0",
+      "name": "社区便利店门口",
+      "type": "Place",
+      "description": "事件 '社区便利店成为白佳唯童年温暖据点' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "e2e2065a-ad1a-4119-905b-2e81088dfe07",
+      "name": "社区",
+      "type": "Concept",
+      "description": "与事件 '社区便利店成为白佳唯童年温暖据点' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1cdb4592-2405-4696-ae8a-c1dbe3dab400",
+      "name": "关怀",
+      "type": "Concept",
+      "description": "与事件 '社区便利店成为白佳唯童年温暖据点' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d1cd5d5e-8d72-488e-9979-b37283060cb3",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '社区便利店成为白佳唯童年温暖据点' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "97ff5087-6f6e-4a16-89f5-8b34cf73c89f",
+      "name": "社区图书馆",
+      "type": "Place",
+      "description": "事件 '图书馆成为白佳唯的避风港' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "2369f1e7-f3c0-45c5-84b7-ba5eec67a012",
+      "name": "图书馆",
+      "type": "Concept",
+      "description": "与事件 '图书馆成为白佳唯的避风港' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6df7dfa8-0b52-4d44-ac3d-a3a57299f7b8",
+      "name": "避风港",
+      "type": "Concept",
+      "description": "与事件 '图书馆成为白佳唯的避风港' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "4e5e4ee6-011f-4df6-af7b-d5e8d83973dc",
+      "name": "写作",
+      "type": "Concept",
+      "description": "与事件 '图书馆成为白佳唯的避风港' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "07c73e51-a8cb-429e-88ce-baaa00542ff3",
+      "name": "社区图书馆角落",
+      "type": "Place",
+      "description": "事件 '与林清雅的友情与互助' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "93c9b647-561c-4d95-aa04-af8ead6031b5",
+      "name": "友情",
+      "type": "Concept",
+      "description": "与事件 '与林清雅的友情与互助' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "ef88178e-7a08-4757-9d31-403fd018fe07",
+      "name": "支持",
+      "type": "Concept",
+      "description": "与事件 '与林清雅的友情与互助' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e5cf3ff5-0ed6-4af4-8c0d-ecb71d8eb47e",
+      "name": "文学",
+      "type": "Concept",
+      "description": "与事件 '与林清雅的友情与互助' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "69450061-d4d8-4bf2-a865-51d953b22943",
+      "name": "家中",
+      "type": "Place",
+      "description": "事件 '家中父女关系紧张与冷漠' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "51e6c620-c70d-4acc-a5c4-284b041bc37f",
+      "name": "家庭冲突",
+      "type": "Concept",
+      "description": "与事件 '家中父女关系紧张与冷漠' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "a6f51238-f3c0-4d45-91cb-46115da3050e",
+      "name": "冷漠",
+      "type": "Concept",
+      "description": "与事件 '家中父女关系紧张与冷漠' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3c5e8de2-2bdd-4f34-94bb-41e3db4cf21a",
+      "name": "紧张",
+      "type": "Concept",
+      "description": "与事件 '家中父女关系紧张与冷漠' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "cb99d1ef-ef2c-443a-a1c1-5f74aaf634df",
+      "name": "社区活动现场",
+      "type": "Place",
+      "description": "事件 '社区志愿者陈瑾萱的鼓励与影响' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "66758627-b2cb-4d95-abe2-83815c87e014",
+      "name": "鼓励",
+      "type": "Concept",
+      "description": "与事件 '社区志愿者陈瑾萱的鼓励与影响' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "0cf2f05b-5f7b-4951-9cf3-714a2443177a",
+      "name": "公益",
+      "type": "Concept",
+      "description": "与事件 '社区志愿者陈瑾萱的鼓励与影响' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e8f1c084-e448-45cd-a56c-adb3d18496eb",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '社区志愿者陈瑾萱的鼓励与影响' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "b7dd0417-fe80-4907-8c1c-f8bbdf4e9cff",
+      "name": "学校",
+      "type": "Place",
+      "description": "事件 '高中白佳唯的伪装与冷漠' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "67997e58-7f02-41e8-87dc-e34f7293425c",
+      "name": "伪装",
+      "type": "Concept",
+      "description": "与事件 '高中白佳唯的伪装与冷漠' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e8834ed7-5f65-414e-8fe1-02982cc5fef0",
+      "name": "青少年",
+      "type": "Concept",
+      "description": "与事件 '高中白佳唯的伪装与冷漠' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "0125c828-01ef-422d-ba51-6fbf85650b1e",
+      "name": "家庭阴影",
+      "type": "Concept",
+      "description": "与事件 '高中白佳唯的伪装与冷漠' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "e2e020b6-7efe-4009-9cf8-b4ea12d3e9f5",
+      "name": "学校教室",
+      "type": "Place",
+      "description": "事件 '与林清雅的心事交流' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "4b4259d3-f8bb-4dc9-96cf-ff32d410993f",
+      "name": "友情",
+      "type": "Concept",
+      "description": "与事件 '与林清雅的心事交流' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f69ff79a-d0d6-45f3-9897-256d81f0d229",
+      "name": "真实情感",
+      "type": "Concept",
+      "description": "与事件 '与林清雅的心事交流' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "fd2cfb6f-ab05-4859-bda9-94499919720c",
+      "name": "倾诉",
+      "type": "Concept",
+      "description": "与事件 '与林清雅的心事交流' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "c775ff4a-816c-4e91-a4ea-73a6d49800b9",
+      "name": "家中餐厅",
+      "type": "Place",
+      "description": "事件 '家庭晚餐时的冷淡对话' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "0b4ea7f2-ebc1-44c7-8541-ad54c4d30d25",
+      "name": "家庭冲突",
+      "type": "Concept",
+      "description": "与事件 '家庭晚餐时的冷淡对话' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "87aeb720-c082-4149-808e-1b61d840c829",
+      "name": "冷漠",
+      "type": "Concept",
+      "description": "与事件 '家庭晚餐时的冷淡对话' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "6d222de8-abff-4b1d-99a8-9ebb1842b086",
+      "name": "疏离",
+      "type": "Concept",
+      "description": "与事件 '家庭晚餐时的冷淡对话' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "238145e0-3e78-46d6-94fb-1e582ba57196",
+      "name": "社区便利店",
+      "type": "Place",
+      "description": "事件 '社区便利店的温暖慰藉' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "cc5dbd28-0ff5-4488-a26c-9108dc80d86e",
+      "name": "邻里关怀",
+      "type": "Concept",
+      "description": "与事件 '社区便利店的温暖慰藉' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f7feb789-8d7e-4810-8609-2e05e752226f",
+      "name": "避风港",
+      "type": "Concept",
+      "description": "与事件 '社区便利店的温暖慰藉' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "68f97852-5eeb-40a8-8fcf-b359e076bb9c",
+      "name": "温暖",
+      "type": "Concept",
+      "description": "与事件 '社区便利店的温暖慰藉' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "1cddf032-2832-45d5-b669-9d0c86931268",
+      "name": "社区图书馆",
+      "type": "Place",
+      "description": "事件 '图书馆与读书会的精神支柱' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "38906a8e-03a3-4433-9fbc-bce9bed7e973",
+      "name": "文学",
+      "type": "Concept",
+      "description": "与事件 '图书馆与读书会的精神支柱' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "5c639b92-a160-4317-a280-682090f4cd94",
+      "name": "精神支柱",
+      "type": "Concept",
+      "description": "与事件 '图书馆与读书会的精神支柱' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "d9b00cc6-43db-4e1b-91f7-c39da67a0f57",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '图书馆与读书会的精神支柱' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "2691d73f-03c3-4b7e-8213-694b4882b53f",
+      "name": "社区绿地",
+      "type": "Place",
+      "description": "事件 '参与公益活动中获得自我价值' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "7f25342f-a18d-4451-8dac-f11f70e51fb7",
+      "name": "公益",
+      "type": "Concept",
+      "description": "与事件 '参与公益活动中获得自我价值' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "3ad67df5-cc87-4ec7-8443-4e961e7765cf",
+      "name": "成长",
+      "type": "Concept",
+      "description": "与事件 '参与公益活动中获得自我价值' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "f4d85af7-19d9-467f-96b3-5f174843270c",
+      "name": "自我价值",
+      "type": "Concept",
+      "description": "与事件 '参与公益活动中获得自我价值' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "2e9c1302-5b4f-4fdf-b3e1-a08f00a93663",
+      "name": "家中小房间",
+      "type": "Place",
+      "description": "事件 '日记成为白佳唯的心灵寄托' 发生的地点",
+      "properties": {}
+    },
+    {
+      "app_id": "b84372d1-f2f7-4e9e-8e58-ac388584dae4",
+      "name": "日记",
+      "type": "Concept",
+      "description": "与事件 '日记成为白佳唯的心灵寄托' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "49f92931-63f6-4430-8410-10ee9a380641",
+      "name": "情绪表达",
+      "type": "Concept",
+      "description": "与事件 '日记成为白佳唯的心灵寄托' 相关的标签",
+      "properties": {}
+    },
+    {
+      "app_id": "52524ec9-0045-4d48-8c1c-c18c85add851",
+      "name": "内心世界",
+      "type": "Concept",
+      "description": "与事件 '日记成为白佳唯的心灵寄托' 相关的标签",
+      "properties": {}
+    }
+  ],
+  "relationships": [],
+  "character_to_character_relationships": [
+    {
+      "relationship_id": "85d17e8d-35c2-40b0-9d80-49719c7e6dd9",
+      "from_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "to_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "relationship_type": "ENEMY",
+      "description": "白佳唯对她的父亲白建华充满复杂的情感，包含深深的嫉妒和憎恨，因童年母亲被父亲暴力致死的创伤。",
+      "strength": 90
+    },
+    {
+      "relationship_id": "985b1a7f-e11a-4e15-b3c4-6a61c560b977",
+      "from_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "to_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "relationship_type": "FAMILY",
+      "description": "白建华作为父亲，努力承担家庭责任，但与女儿白佳唯关系紧张且充满矛盾，存在内心的遗憾与挣扎。",
+      "strength": 70
+    },
+    {
+      "relationship_id": "06cc4f30-172b-439b-8637-59d01ba456e2",
+      "from_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "to_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "relationship_type": "FRIEND",
+      "description": "白佳唯视社区便利店老板陈婉婷为温暖的支持者，常受到她的关心和照顾。",
+      "strength": 80
+    },
+    {
+      "relationship_id": "8c7276f7-ff0d-4e1c-afe1-78521a408e9d",
+      "from_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "to_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "relationship_type": "FRIEND",
+      "description": "陈婉婷作为社区便利店主，经常照顾白佳唯的生活需求，关系亲密且友好。",
+      "strength": 85
+    },
+    {
+      "relationship_id": "5658548f-74d1-491c-8336-bef2b05019ed",
+      "from_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "to_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "relationship_type": "FRIEND",
+      "description": "白佳唯与林清雅因共同兴趣在文学社相识，彼此尊重对方的独立和真实表达，维持稳定的友谊。",
+      "strength": 75
+    },
+    {
+      "relationship_id": "78b90c34-70a2-42c9-ad55-63a0fd4a22d0",
+      "from_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "to_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "relationship_type": "FRIEND",
+      "description": "林清雅珍视与白佳唯的友谊，因两人志同道合且相互支持，关系稳固。",
+      "strength": 70
+    },
+    {
+      "relationship_id": "6ecd7138-9e9b-4733-8070-4d9288e5d07b",
+      "from_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "to_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白佳唯可能在社区图书馆或文化活动中接触过陈婉仪，但关系较为浅显，主要是青少年与文化工作者的互动。",
+      "strength": 40
+    },
+    {
+      "relationship_id": "9224cbff-d831-4958-83c2-e2f0aed4f5eb",
+      "from_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "to_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "relationship_type": "MENTOR",
+      "description": "陈婉仪关注社区青少年的成长，可能将白佳唯视为阅读推广和文化引导的对象。",
+      "strength": 65
+    },
+    {
+      "relationship_id": "f3c12830-b614-4326-bc7f-fdb226df525a",
+      "from_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "to_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白佳唯与社区志愿者陈瑾萱之间可能存在因社区活动的接触，但关系不深入。",
+      "strength": 35
+    },
+    {
+      "relationship_id": "902f22f0-7971-4230-a320-550179d2821d",
+      "from_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "to_character_app_id": "fdbe21c9-a917-4f3d-9ffd-474572f7b38c",
+      "relationship_type": "MENTOR",
+      "description": "陈瑾萱专注青少年成长，可能对白佳唯进行过鼓励和帮助，关系建立在志愿服务和指导基础上。",
+      "strength": 60
+    },
+    {
+      "relationship_id": "4a396ef8-7b5c-41a2-8970-ef60e5296d45",
+      "from_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "to_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白建华与邻里社区便利店店主陈婉婷可能有日常生活中的普通交往，关系较为一般。",
+      "strength": 30
+    },
+    {
+      "relationship_id": "d8861655-a26f-4d1c-b073-7da5aa942d26",
+      "from_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "to_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉婷作为社区成员，可能与白建华在社区活动中有一定接触，关系保持礼貌和熟悉。",
+      "strength": 35
+    },
+    {
+      "relationship_id": "583c71c8-3fff-4938-b96b-e258b3e0c689",
+      "from_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "to_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "relationship_type": "STRANGER",
+      "description": "白建华与林清雅未见有直接交流或联系，彼此互不熟悉。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "459225b7-3103-46c2-a35b-b232407b6dbb",
+      "from_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "to_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "relationship_type": "STRANGER",
+      "description": "林清雅与白建华没有已知的交集或交流，彼此陌生。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "6d004c34-f2a9-4259-9ca0-e531f9d3e0da",
+      "from_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "to_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白建华与社区图书管理员陈婉仪可能在社区活动中有一定联系，但关系较为普通。",
+      "strength": 30
+    },
+    {
+      "relationship_id": "53728cf9-2937-4b5c-ace1-8b4f3c8940bd",
+      "from_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "to_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉仪作为社区工作人员，可能与白建华在社区文化或教育相关事务中有互动。",
+      "strength": 35
+    },
+    {
+      "relationship_id": "0a9683e6-d701-473e-a4e2-b16a742c9af4",
+      "from_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "to_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "白建华与社区志愿者陈瑾萱可能在社区活动中有接触但联系不深。",
+      "strength": 30
+    },
+    {
+      "relationship_id": "9605c457-efd6-4511-87b0-4f4b87efb78a",
+      "from_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "to_character_app_id": "313c2e2d-cb27-4fa3-9bfe-245a22d151a6",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈瑾萱在社区志愿工作中可能与白建华有一定交流，保持良好但不亲密的关系。",
+      "strength": 35
+    },
+    {
+      "relationship_id": "67bf1d41-812b-409c-bc01-f402ef08767a",
+      "from_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "to_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "relationship_type": "STRANGER",
+      "description": "陈婉婷与林清雅无明显交集，彼此陌生。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "eb996049-c70e-41d9-a3f6-0570e80d39bb",
+      "from_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "to_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "relationship_type": "STRANGER",
+      "description": "林清雅与社区店主陈婉婷没有已知联系，关系疏远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "f5eefda8-66b9-42b6-b618-706a861f9fb9",
+      "from_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "to_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉婷与社区图书管理员陈婉仪在社区内可能保持良好邻里关系，经常参加社区活动。",
+      "strength": 60
+    },
+    {
+      "relationship_id": "6552e06b-0acb-49e1-832d-f2bff8ee5d7e",
+      "from_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "to_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉仪与便利店主陈婉婷同处社区文化建设和服务环境，关系和谐。",
+      "strength": 65
+    },
+    {
+      "relationship_id": "24fdd97a-39af-4f60-9d8b-bc07f1c4e17c",
+      "from_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "to_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉婷与社区志愿者陈瑾萱在社区工作中可能有协作，关系较好。",
+      "strength": 55
+    },
+    {
+      "relationship_id": "7828534b-604b-43e1-8f06-832e07f4a9b0",
+      "from_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "to_character_app_id": "9895950f-077a-46a1-b7fa-3330537a9828",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈瑾萱与便利店主陈婉婷保持良好合作关系，共同推动社区公益。",
+      "strength": 60
+    },
+    {
+      "relationship_id": "918b3b3d-d935-484a-a3ef-22187613cc6e",
+      "from_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "to_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "林清雅可能在社区文化活动中与陈婉仪有过接触，关系较为浅显。",
+      "strength": 40
+    },
+    {
+      "relationship_id": "b338c911-8e7d-44ee-a466-0c58bd685407",
+      "from_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "to_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "relationship_type": "MENTOR",
+      "description": "陈婉仪作为文化推动者，可能在阅读和表达方面引导林清雅，关系带有指导性质。",
+      "strength": 60
+    },
+    {
+      "relationship_id": "e8a50f0b-4df5-440a-a8c6-34d168022df9",
+      "from_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "to_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "relationship_type": "STRANGER",
+      "description": "林清雅与社区志愿者陈瑾萱无直接联系，彼此陌生。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "afb0ef24-ffa0-415f-95c1-4363ba0b2119",
+      "from_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "to_character_app_id": "753c109a-3f5a-4e2d-b0cb-87327bd98f6a",
+      "relationship_type": "STRANGER",
+      "description": "陈瑾萱与林清雅未有明显接触，关系疏远。",
+      "strength": 5
+    },
+    {
+      "relationship_id": "bba1fb96-51f2-43f5-97a4-e2ce73315098",
+      "from_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "to_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈婉仪与社区志愿者陈瑾萱在社区文化和公益活动中可能有合作，关系良好。",
+      "strength": 55
+    },
+    {
+      "relationship_id": "1207781a-4e02-49fc-8256-c85113fab4be",
+      "from_character_app_id": "5dd796ab-ce73-4c32-afeb-c3f4db8345a7",
+      "to_character_app_id": "3b931a2e-ce53-4428-a431-0b5e0d0de075",
+      "relationship_type": "ACQUAINTANCE",
+      "description": "陈瑾萱与陈婉仪在社区公益和文化促进中保持合作关系。",
+      "strength": 60
+    }
+  ]
+}

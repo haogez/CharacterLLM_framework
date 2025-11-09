@@ -442,17 +442,31 @@ class StoryBasedMemoryGenerator:
         log_info(f"开始从故事中提取记忆片段 (新模型)...")
         start_time = time.time()
 
-        # 获取所有角色ID列表，用于验证参与者
-        all_char_map = {character_data['id']: character_data['name']} # 只存name用于日志
+        # --- 构建名称到ID的映射表 ---
+        name_to_id_map = {}
+        # 主角色
+        name_to_id_map[character_data.get('name')] = character_data.get('id')
+        # 关联角色
+        for rc in related_characters:
+            name_to_id_map[rc.get('name')] = rc.get('id')
+        # 可选：也添加角色的拼音或别名到映射表，如果故事中可能使用这些形式
+        # 例如: name_to_id_map['Bai Jia Wei'] = character_data.get('id')
+        # 但通常主角色名和关联角色名就足够了
+        # --- 构建名称到ID的映射表结束 ---
+
+        # 获取所有角色ID列表，用于验证参与者 (这个现在用于日志)
+        all_char_map = {character_data['id']: character_data['name']} # ID -> Name
         all_char_map.update({rc['id']: rc['name'] for rc in related_characters})
         # --- 添加调试日志 ---
         log_info(f"[DEBUG] extract_memories_from_lifespan_story: all_char_map (ID -> Name): {all_char_map}")
+        log_info(f"[DEBUG] extract_memories_from_lifespan_story: name_to_id_map (Name -> ID): {name_to_id_map}") # 新增日志
 
         # 获取所有角色ID列表，用于验证参与者
         all_char_ids = {character_data['id']: character_data['name']}
         all_char_ids.update({rc['id']: rc['name'] for rc in related_characters})
         log_info(f"[DEBUG] extract_memories_from_lifespan_story: all_char_ids (ID -> Name, for filtering): {all_char_ids}")
 
+        # **修改 Prompt：严格要求 participants 使用 ID**
         system_prompt = f"""
         你是记忆考古学家，任务是仔细阅读以下关于"{character_data.get('name')}"的故事，并将故事中发生的每一个可记忆的事件、场景、对话、情绪、感觉、思考、行为等都识别出来，转换成详细的、结构化的记忆条目。
 
@@ -495,7 +509,7 @@ class StoryBasedMemoryGenerator:
             }},
             "type": "scene", // 新增：记忆类型 (scene, dialogue, emotion, thought, behavior, sensation)
             "location": "学校操场", // 新增：地点
-            "participants": ["[主角色ID]", "[关联角色ID1]"], // 新增：涉及的角色ID列表 (必须是故事中实际提到的角色)
+            "participants": ["[角色名称或拼音]"], // **重要**：必须包含所有在此记忆片段中出现的角色的**名称或拼音**（从以下列表中选择：{list(name_to_id_map.keys())}）。**注意**：请使用角色的名称或拼音，稍后系统会将其转换为ID。
             "tags": ["友谊", "美好回忆"], // 新增：标签列表
             "duration": "几分钟", // 新增：事件持续时间
             "context_before": "...", // 新增：片段前的上下文
@@ -506,10 +520,10 @@ class StoryBasedMemoryGenerator:
 
         **重要**:
         - 每个记忆条目都必须包含所有字段，即使某些字段没有明确信息也需用空字符串或默认值填充。
-        - "participants" 字段应包含所有在此记忆片段中出现的角色的ID（从 character_data 和 related_characters 中获取）。请严格检查，确保ID存在于角色列表中。
+        - "participants" 字段**必须**包含所有在此记忆片段中出现的角色的**名称或拼音**（从 character_data 和 related_characters 中获取）。请严格检查，确保名称或拼音存在于提供的列表中。
         - "type", "location", "tags", "duration", "context_before", "context_after" 是新增的细粒度属性。
         - 请直接返回JSON数组，不要添加其他解释文字。
-        - **特别注意**：请确保提取的 "time.age" 字段准确反映事件发生时主角色的年龄。请确保 "participants" 列表包含事件中涉及的所有角色ID，且这些ID必须在提供的角色列表中。
+        - **特别注意**：请确保提取的 "time.age" 字段准确反映事件发生时主角色的年龄。请确保 "participants" 列表包含事件中涉及的所有角色名称或拼音。
         """
 
         user_prompt = f"""
@@ -536,46 +550,42 @@ class StoryBasedMemoryGenerator:
 
                 # --- 添加调试日志 ---
                 raw_participants_names = raw_mem.get("participants", [])
-                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} (Title: {raw_mem.get('title', 'N/A')[:20]}...) - Raw Participants (Names): {raw_participants_names}")
+                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} (Title: {raw_mem.get('title', 'N/A')[:20]}...) - Raw Participants (Names/Pinyin): {raw_participants_names}")
                 # ---
 
                 memory_id = str(uuid.uuid4())
                 processed_mem = raw_mem.copy()
                 processed_mem["id"] = memory_id
 
-                # 验证并过滤参与者
+                # 验证并**映射**参与者 (将名称/拼音映射为ID)
                 participants_names = processed_mem.get("participants", [])
                 if not isinstance(participants_names, list):
                     participants_names = [participants_names] if participants_names else []
                 # --- 添加调试日志 ---
-                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - Participants before filtering (Names): {participants_names}")
+                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - Participants before mapping (Names/Pinyin): {participants_names}")
                 # ---
 
-                # *** 修正：将参与者名字转换为ID ***
-                filtered_participant_ids = []
-                for name in participants_names:
-                    # 查找名字对应的ID
-                    found_id = None
-                    for cid, cname in all_char_map.items():
-                        if cname == name:
-                            found_id = cid
-                            break
-                    if found_id:
-                        filtered_participant_ids.append(found_id)
-                        log_debug(f"[DEBUG] Found ID {found_id} for name {name}")
+                # 映射参与者名称/拼音到ID
+                mapped_participant_ids = []
+                for name_or_pinyin in participants_names:
+                    # 尝试从 name_to_id_map 获取 ID
+                    if name_or_pinyin in name_to_id_map:
+                        mapped_id = name_to_id_map[name_or_pinyin]
+                        mapped_participant_ids.append(mapped_id)
+                        log_debug(f"[DEBUG] Mapped participant name/pinyin '{name_or_pinyin}' to ID '{mapped_id}'")
                     else:
-                        log_warning(f"[DEBUG] Name {name} from memory participants not found in all_char_map. Skipping.")
+                        log_warning(f"[DEBUG] Name/Pinyin '{name_or_pinyin}' from memory participants not found in name_to_id_map. Skipping.")
 
                 # --- 添加调试日志 ---
-                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - Participants after filtering (Names->IDs): {filtered_participant_ids}")
+                log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - Participants after mapping (IDs): {mapped_participant_ids}")
                 # ---
-                processed_mem["participants"] = filtered_participant_ids
+                processed_mem["participants"] = mapped_participant_ids
 
                 # 如果没有参与者，至少包含主角色
                 if not processed_mem["participants"]:
                     processed_mem["participants"] = [character_data.get("id")]
                     # --- 添加调试日志 ---
-                    log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - No valid participants after filtering, set to main character ID: {[character_data.get('id')]}")
+                    log_info(f"[DEBUG] Memory ID: {raw_mem.get('id', 'N/A')} - No valid participants after mapping, set to main character ID: {[character_data.get('id')]}")
                     # ---
 
                 tags = processed_mem.get("tags", [])
