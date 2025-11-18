@@ -405,33 +405,54 @@ async def generate_and_store_fine_grained_memories(
         log_info("开始执行完整的故事生成流程...")
         story_gen_start_time = time.time()
 
-        story_text = await story_memory_generator.generate_character_lifespan_story(main_character, related_characters, [])
+        # --- 修改：首先生成 story_idea ---
+        story_idea = await story_memory_generator.generate_idea(main_character) # 调用 StoryBasedMemoryGenerator 的方法
+        if not story_idea:
+            raise ValueError("生成故事灵感失败")
 
-        if not story_text:
-            raise ValueError("生成人生故事失败")
+        log_info(f"故事灵感生成完成，耗时: {time.time() - story_gen_start_time:.2f} 秒")
+        # ---
 
-        log_info(f"完整故事生成完成，耗时: {time.time() - story_gen_start_time:.2f} 秒")
+
+        log_info("开始完善角色背景故事...")
+        refine_start_time = time.time()
+        refined_main_char, refined_related_chars = await story_memory_generator.refine_characters_with_backgrounds(main_character, related_characters)
+        log_info(f"角色背景故事完善完成，耗时: {time.time() - refine_start_time:.2f} 秒")
+
+
+        log_info("开始生成分章节人生故事...")
+        chapter_gen_start_time = time.time()
+        # --- 修改：调用生成章节故事的方法，并传入 story_idea ---
+        # chaptered_stories = await story_memory_generator.generate_chaptered_lifespan_story(main_character, related_characters, story_idea.get('story_idea', ''))
+        chaptered_stories = await story_memory_generator.generate_chaptered_lifespan_story(refined_main_char, refined_related_chars, story_idea.get('story_idea', ''))
+        # ---
+        if not chaptered_stories:
+            raise ValueError("生成分章节人生故事失败")
+
+        log_info(f"完整故事（分章节）生成完成，共 {len(chaptered_stories)} 个章节，耗时: {time.time() - chapter_gen_start_time:.2f} 秒")
         log_info("开始从故事中提取记忆片段...")
         memory_extraction_start_time = time.time()
 
-        extracted_memories = await story_memory_generator.extract_memories_from_lifespan_story(story_text, main_character, related_characters)
+        # --- 修改：调用提取记忆的方法，传入章节列表 ---
+        extracted_memories = await story_memory_generator.extract_memories_from_lifespan_story(chaptered_stories, refined_main_char, refined_related_chars)
+        # ---
+
         log_debug(f"提取记忆函数返回，共 {len(extracted_memories)} 个项目")
         log_info(f"提取完成，共 {len(extracted_memories)} 条记忆片段，耗时: {time.time() - memory_extraction_start_time:.2f} 秒")
 
         log_info("开始从故事中提取实体和关系...")
         entity_extraction_start_time = time.time()
 
-        # --- 修改：调用修改后的方法，传入 graph_store, related_characters 和 extracted_memories ---
+        # --- 修改：调用提取实体和关系的方法，传入章节列表拼接的完整故事 ---
+        full_story_string_for_extraction = "\n\n".join([chapter["original_context"] for chapter in chaptered_stories])
         entities, relationships_from_story, imported_char_to_char_rels = await story_memory_generator.extract_entities_and_relationships_from_story(
-            story_text,
-            main_character,
-            related_characters, # 传递关联角色
-            extracted_memories, # 传递提取的记忆
+            full_story_string_for_extraction, # 传入完整故事字符串
+            refined_main_char,
+            refined_related_chars,
+            extracted_memories,
             graph_store
         )
         imported_char_to_char_count = len(imported_char_to_char_rels) if imported_char_to_char_rels else 0
-        # ---
-        
         log_debug(f"提取实体和关系函数返回，实体 {len(entities)} 个，非事件关系 {len(relationships_from_story)} 条，角色间关系 {imported_char_to_char_count} 条")
         log_info(f"从故事中提取实体和关系耗时: {time.time() - entity_extraction_start_time:.2f} 秒")
 

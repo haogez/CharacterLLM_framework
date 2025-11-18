@@ -5,6 +5,7 @@
 import asyncio
 import json
 import os
+import re
 import time
 from typing import Dict, List, Any, Optional, AsyncGenerator
 
@@ -113,16 +114,16 @@ class ResponseFlow:
             context_info = f"对话对象是 {user_name} ({user_occ})，与 {character_data.get('name')} 的关系可能是 {user_rel}。"
         # ... 其余逻辑类似，但Prompt中可以包含 context_info
         system_prompt = f"""
-你是对话意图分析师，需判断用户问题是否需要{character_data.get('name', '角色')}调用「个人记忆片段」回答。
+        你是对话意图分析师，需判断用户问题是否需要{character_data.get('name', '角色')}调用「个人记忆片段」回答。
 
-角色基础：{character_data.get('name')}，{character_data.get('age')}岁，{character_data.get('occupation')}。
-{context_info} # 添加上下文信息
+        角色基础：{character_data.get('name')}，{character_data.get('age')}岁，{character_data.get('occupation')}。
+        {context_info} # 添加上下文信息
 
-需要调用记忆片段的情况：问题涉及角色的「过往经历、具体事件、形成的习惯、特定场景的感受、与他人的互动」（如"你之前遇到过XX情况吗？""你为什么有XX习惯？""你和XX之间发生过什么？"）。
-不需要调用记忆片段的情况：问题是寒暄问候、询问当前人设（如"你喜欢什么爱好？"）、通用知识（如"今天天气如何？"）。
+        需要调用记忆片段的情况：问题涉及角色的「过往经历、具体事件、形成的习惯、特定场景的感受、与他人的互动」（如"你之前遇到过XX情况吗？""你为什么有XX习惯？""你和XX之间发生过什么？"）。
+        不需要调用记忆片段的情况：问题是寒暄问候、询问当前人设（如"你喜欢什么爱好？"）、通用知识（如"今天天气如何？"）。
 
-仅返回"YES"或"NO"，不添加任何解释。
-"""
+        仅返回"YES"或"NO"，不添加任何解释。
+        """
         user_prompt = f"用户问题：{user_input}\n判断结果（仅YES/NO）："
         
         result = await self.character_llm.client.generate_response(system_prompt, user_prompt)
@@ -184,9 +185,9 @@ class ResponseFlow:
                                              character_data: Dict[str, Any],
                                              user_input: str,
                                              immediate_response: str,
-                                             character_id: str, # 没有默认值的参数移到前面
-                                             conversation_history: List[Dict[str, str]] = None, # 有默认值
-                                             user_character_data: Optional[Dict[str, Any]] = None # 有默认值
+                                             character_id: str,
+                                             conversation_history: List[Dict[str, str]] = None,
+                                             user_character_data: Optional[Dict[str, Any]] = None
                                              ) -> Dict[str, Any]:
         print("\n" + "="*60)
         print(f"📝 生成补充响应...")
@@ -205,30 +206,168 @@ class ResponseFlow:
         if self.graph_store: # 确保 graph_store 实例存在
             try:
                 with self.graph_store.driver.session(database=self.graph_store.database) as session:
-                    # 使用 Cypher 查询来实现 GraphRAG，只检索印象节点
-                    # 1. 基于角色ID和用户输入的关键词匹配进行检索
-                    # **修正：查询字段从 i.content 改为 i.impression_content**
-                    result = session.run(
-                        """
-                        MATCH (c:Character {app_id: $character_id})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
-                        WHERE toLower(i.impression_content) CONTAINS toLower($query_text)
-                        RETURN i, e, i.strength AS strength
-                        ORDER BY strength DESC
-                        LIMIT 5 // 可以调整返回数量
-                        """,
-                        character_id=character_id,
-                        query_text=user_input
-                    )
-                    raw_impressions = []
-                    for record in result:
-                        impression_node = record["i"]
-                        event_node = record["e"]
-                        strength = record["strength"]
-                        impression_props = dict(impression_node)
-                        event_props = dict(event_node)
+                    # --- 步骤 1: 关键词匹配 ---
+                    print("🔍  尝试关键词匹配...")
+                    # ... (之前的关键词匹配逻辑保持不变) ...
+                    # 1.1 提取用户输入中的关键词
+                    keywords = re.findall(r'[\u4e00-\u9fff\w]+', user_input)
+                    common_words = {"你", "我", "他", "她", "它", "是", "的", "了", "在", "有", "和", "跟", "与", "吗", "呢", "吧", "啊", "呀", "还", "就", "才", "又", "再", "更", "最", "很", "挺", "太", "非常", "特别", "十分", "有点", "稍微", "几乎", "几乎不", "完全", "全部", "都", "全部", "所有", "每个", "一些", "几个", "某些", "别的", "其他", "另外", "这", "那", "这些", "那些", "这个", "那个", "这里", "那里", "这儿", "那儿", "现在", "然后", "如果", "因为", "所以", "但是", "然而", "虽然", "尽管", "为了", "关于", "对于", "关于", "把", "被", "让", "叫", "请", "让", "使", "帮", "给", "为", "对", "向", "往", "朝", "用", "以", "比", "跟", "和", "同", "与", "及", "以及", "或", "或者", "还是"}
+                    keywords = [kw.lower() for kw in keywords if len(kw) > 1 and kw not in common_words]
+                    print(f"   提取关键词: {keywords}")
 
-                        # 将印象和事件的 properties 字段（Base64 编码的 JSON）解码并合并回 props
-                        for props_dict, node_name in [(impression_props, "impression"), (event_props, "event")]:
+                    if keywords:
+                        # 1.2 构建 Cypher 查询，使用 OR 连接的 CONTAINS
+                        or_conditions_impression = []
+                        params = {"character_id": character_id}
+                        for i, kw in enumerate(keywords):
+                            or_conditions_impression.append(f"toLower(i.impression_content) CONTAINS toLower($kw{i})")
+                            params[f"kw{i}"] = kw
+                        where_clause_keyword = " OR ".join(or_conditions_impression)
+                        query_keyword = f"""
+                        MATCH (c:Character {{app_id: $character_id}})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
+                        WHERE {where_clause_keyword}
+                        RETURN i, e, i.strength AS strength, 'keyword' AS source
+                        ORDER BY strength DESC
+                        LIMIT 10 // 可以适当增加，因为后续会合并去重
+                        """
+                        print(f"   执行关键词查询: {query_keyword}")
+                        print(f"   参数: {params}")
+                        result_keyword = session.run(query_keyword, **params)
+                        raw_impressions_keyword = []
+                        for record in result_keyword:
+                            raw_impressions_keyword.append({
+                                "impression": dict(record["i"]),
+                                "event": dict(record["e"]),
+                                "strength": record["strength"],
+                                "source": record["source"]
+                            })
+                        print(f"   关键词查询返回 {len(raw_impressions_keyword)} 条记录")
+                    else:
+                        raw_impressions_keyword = []
+                        print("   关键词提取为空，跳过关键词查询")
+
+                    # --- 步骤 2: 结构化查询 ---
+                    print("🔍  尝试结构化查询...")
+                    # ... (之前的结构化查询逻辑保持不变) ...
+                    # 2.1 尝试从用户输入中提取结构化信息 (这里简化处理，实际可能需要 NLP)
+                    location_names = [kw for kw in keywords if len(kw) > 2] # 简单过滤，认为较长的词可能是地点
+
+                    raw_impressions_structured = []
+                    if location_names:
+                         # 尝试匹配 Event 节点的 event_content
+                         or_conditions_location = []
+                         params_loc = {"character_id": character_id}
+                         for i, loc_kw in enumerate(location_names):
+                             or_conditions_location.append(f"toLower(e.event_content) CONTAINS toLower($loc_kw{i})")
+                             params_loc[f"loc_kw{i}"] = loc_kw
+                         where_clause_location = " OR ".join(or_conditions_location)
+                         query_structured = f"""
+                         MATCH (c:Character {{app_id: $character_id}})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
+                         WHERE {where_clause_location}
+                         RETURN i, e, i.strength AS strength, 'structured_location' AS source
+                         ORDER BY strength DESC
+                         LIMIT 5
+                         """
+                         print(f"   执行结构化地点查询: {query_structured}")
+                         print(f"   参数: {params_loc}")
+                         result_structured = session.run(query_structured, **params_loc)
+                         for record in result_structured:
+                            raw_impressions_structured.append({
+                                "impression": dict(record["i"]),
+                                "event": dict(record["e"]),
+                                "strength": record["strength"],
+                                "source": record["source"]
+                            })
+                         print(f"   结构化地点查询返回 {len(raw_impressions_structured)} 条记录")
+
+                    # --- 步骤 3: 向量搜索 (语义搜索) ---
+                    print("🔍  尝试向量搜索 (语义搜索)...")
+                    # 3.1 搜索与查询语义相关的 Event
+                    # semantic_results_events = self.graph_store.semantic_search_events(user_input, k=5)
+                    # 3.2 搜索与查询语义相关的 Impression
+                    semantic_results_impressions = self.graph_store.semantic_search_impressions(user_input, k=5)
+
+                    #3.3 将 LangChain 返回的格式转换为与之前一致的 raw_impressions 格式
+                    # raw_impressions_semantic_events = []  # 不再需要
+                    raw_impressions_semantic_impressions = []
+                    for item in semantic_results_impressions:
+                        # item 结构: {"impression": {...}, "event": {...}, "character": {...}, "relevance_score": score, "source": "vector_impression"}
+                        impression_data = item["impression"]
+                        event_data = item["event"]
+                        if impression_data: # 确保 impression_data 存在
+                            raw_impressions_semantic_impressions.append({
+                                "impression": impression_data,
+                                "event": event_data,
+                                "strength": item.get("relevance_score", 0.5) * 100,
+                                "source": item["source"]
+                            })
+
+                    raw_impressions_semantic = raw_impressions_semantic_impressions  # 只保留印象搜索结果
+                    print(f"   向量搜索返回 {len(raw_impressions_semantic)} 条记录 (仅来自印象)")
+
+
+                    # --- 步骤 4: 传统语义搜索 (使用 textdistance) ---
+                    print("🔍  尝试传统语义搜索 (基于textdistance)...")
+                    query_for_semantic = """
+                    MATCH (c:Character {app_id: $character_id})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
+                    WHERE i.strength > 30 // 选择强度较高的印象进行语义比较
+                    RETURN i, e, i.strength AS strength
+                    ORDER BY strength DESC
+                    LIMIT 10 // 减少数量，因为向量搜索更准确
+                    """
+                    result_for_semantic = session.run(query_for_semantic, character_id=character_id)
+                    candidates_for_semantic = []
+                    for record in result_for_semantic:
+                        candidates_for_semantic.append({
+                            "impression": dict(record["i"]),
+                            "event": dict(record["e"]),
+                            "strength": record["strength"]
+                        })
+
+                    semantic_results_legacy = []
+                    for candidate in candidates_for_semantic:
+                        impression_content = candidate["impression"].get("impression_content", "")
+                        try:
+                            import textdistance
+                            similarity = textdistance.jaro_winkler(user_input, impression_content)
+                            if similarity > 0.3:
+                                semantic_results_legacy.append({
+                                    "candidate": candidate,
+                                    "similarity": similarity
+                                })
+                        except ImportError:
+                            print("   警告: 未安装 textdistance，跳过传统语义搜索")
+                            break
+
+                    semantic_results_legacy.sort(key=lambda x: x["similarity"], reverse=True)
+                    top_k_semantic_legacy = 2 # 选择前 K 个
+                    raw_impressions_semantic_legacy = [r["candidate"] for r in semantic_results_legacy[:top_k_semantic_legacy]]
+                    for r in raw_impressions_semantic_legacy:
+                        r["source"] = "semantic_legacy"
+                    print(f"   传统语义搜索返回 {len(raw_impressions_semantic_legacy)} 条记录 (基于阈值和 Top-{top_k_semantic_legacy})")
+
+
+                    # --- 合并和去重 ---
+                    print("🔍  合并关键词、结构化、向量语义、传统语义搜索结果...")
+                    all_raw_impressions_unfiltered = (
+                        raw_impressions_keyword +
+                        raw_impressions_structured +
+                        raw_impressions_semantic +
+                        raw_impressions_semantic_legacy
+                    )
+                    # 去重：基于 impression_app_id
+                    seen_ids = set()
+                    all_raw_impressions = []
+                    for imp in all_raw_impressions_unfiltered:
+                        imp_id = imp["impression"].get("app_id")
+                        if imp_id and imp_id not in seen_ids:
+                            all_raw_impressions.append(imp)
+                            seen_ids.add(imp_id)
+                    print(f"   合并后去重得到 {len(all_raw_impressions)} 条唯一记录")
+
+                    # --- 解码 properties ---
+                    for imp_dict in all_raw_impressions:
+                        for props_dict, node_name in [(imp_dict["impression"], "impression"), (imp_dict["event"], "event")]:
                             if "properties" in props_dict and props_dict["properties"]:
                                 try:
                                     decoded_props = base64.b64decode(props_dict["properties"]).decode('utf-8')
@@ -240,14 +379,7 @@ class ResponseFlow:
                             # 移除 Base64 编码的 properties 字段
                             props_dict.pop("properties", None)
 
-                        # 将印象和事件信息合并到一个字典中
-                        combined_info = {
-                            "impression": impression_props,
-                            "event": event_props,
-                            "strength": strength
-                        }
-                        raw_impressions.append(combined_info)
-                    all_raw_impressions = raw_impressions
+
             except Exception as e:
                 print(f"❌ GraphRAG 检索失败: {e}")
                 import traceback
@@ -258,10 +390,11 @@ class ResponseFlow:
         print(f"⏱️  GraphRAG 检索耗时: {time.time()-start_time:.2f}秒")
         print(f"📊 检索到 {len(all_raw_impressions)} 条相关印象")
         for idx, imp in enumerate(all_raw_impressions, 1):
-            impression_content = imp.get("impression", {}).get("impression_content", imp.get("impression", {}).get("content", "未知内容")) # 优先 impression_content
+            impression_content = imp.get("impression", {}).get("impression_content", imp.get("impression", {}).get("content", "未知内容"))
             event_title = imp.get("event", {}).get("event_title", imp.get("event", {}).get("title", "未知事件"))
             strength = imp.get("strength", "未知强度")
-            print(f"   📌 印象{idx}: 事件={event_title} | 印象内容={impression_content[:50]}... | 强度={strength}")
+            source = imp.get("source", "unknown")
+            print(f"   📌 印象{idx}: 事件={event_title} | 印象内容={impression_content[:50]}... | 强度={strength} | 来源={source}")
         print("🔍  GraphRAG 检索完成")
         print("="*60)
         # --- GraphRAG 检索结束 ---
@@ -280,7 +413,7 @@ class ResponseFlow:
             # 从图谱获取关系信息
             user_relationship_info = self.graph_store.get_relationship_between_characters(character_data.get('id'), user_character_data.get('id')) if self.graph_store else None
             relationship_type = user_relationship_info.get('type', 'UNKNOWN') if user_relationship_info else 'UNKNOWN'
-            relationship_description = user_relationship_info.get('description', '未知') if user_relationship_info else '未知'
+            relationship_description = user_relationship_info.get('description', '未知') if user_relationship_info else 'UNKNOWN'
             # 主角色性格
             main_personality = character_data.get('personality', {})
             main_neuroticism = main_personality.get('neuroticism', 50)
@@ -338,6 +471,7 @@ class ResponseFlow:
             impression_content = imp.get("impression", {}).get("impression_content", imp.get("impression", {}).get("content", "我似乎记得..."))
             event_title = imp.get("event", {}).get("event_title", imp.get("event", {}).get("title", "某个事件"))
             strength = imp.get("strength", "未知强度")
+            source = imp.get("source", "unknown") # 添加来源信息
             # 可以根据强度或内容长度调整“回忆”的语气，例如强度低的可能更模糊
             if strength < 40:
                  tone_prefix = "我有点模糊地记得... "
@@ -347,40 +481,40 @@ class ResponseFlow:
                  tone_prefix = "我还清晰地记得... "
 
             formatted_impressions.append(f"""
-【第{idx}段回忆】
-- 事件：{event_title}
-- 回忆内容：{tone_prefix}{impression_content}
-- 印象强度：{strength}/100
-""")
+            【第{idx}段回忆 (来源: {source})】
+            - 事件：{event_title}
+            - 回忆内容：{tone_prefix}{impression_content}
+            - 印象强度：{strength}/100
+            """)
         # ---
 
         system_prompt = f"""
-你是{character_data.get('name', '角色')}，一个{character_data.get('age')}岁的{character_data.get('occupation')}。你需要回应用户的输入。
+        你是{character_data.get('name', '角色')}，一个{character_data.get('age')}岁的{character_data.get('occupation')}。你需要回应用户的输入。
 
-**你的核心人设：**
-- 价值观：{character_data.get('values')}
-- 语言风格：{character_data.get('language_style')}
-- 说话风格：{character_data.get('speech_style')}
-- 生活习惯：{character_data.get('living_habit')}
-- 家庭状况：{character_data.get('family_status')}
-- 社交模式：{character_data.get('social_pattern')}
+        **你的核心人设：**
+        - 价值观：{character_data.get('values')}
+        - 语言风格：{character_data.get('language_style')}
+        - 说话风格：{character_data.get('speech_style')}
+        - 生活习惯：{character_data.get('living_habit')}
+        - 家庭状况：{character_data.get('family_status')}
+        - 社交模式：{character_data.get('social_pattern')}
 
-**当前对话上下文：**
-{user_context}
+        **当前对话上下文：**
+        {user_context}
 
-**你回忆起的相关片段（这些是经过时间、性格等过滤后的印象，而非完整事件）：**
-{''.join(formatted_impressions) if formatted_impressions else "你对此没有特别清晰的回忆。"}
+        **你回忆起的相关片段（这些是经过时间、性格等过滤后的印象，而非完整事件）：**
+        {''.join(formatted_impressions) if formatted_impressions else "你对此没有特别清晰的回忆。"}
 
-**核心要求：**
-1.  **模拟真实对话**：你的回应应该像真实的人在说话，而不是在做自我介绍或表演。不要上来就描述自己的性格、价值观或生活习惯。
-2.  **就事论事**：直接回答用户的问题或回应用户的话，不要过度解释或展开无关话题。
-3.  **动态称呼**：根据对话上下文中的信息，分析并使用最自然、最符合关系和性格的称呼来指代对方（例如"妈妈"、"爸爸"、"老师"、"同学"、"朋友"、"您"、对方的名字或昵称等）。**不要**生硬地使用关系词或直接叫名字（除非上下文明确表明这是合适的）。
-4.  **语气贴合性格**：你的回应语气、用词、态度应与你的性格特质（特别是神经质、宜人性、开放性、外向性）和价值观一致。例如，高神经质可能更敏感、谨慎；低宜人性可能更直接、坚持自我边界；高开放性可能更愿意尝试新表达；高外向性可能更主动、热情。
-5.  **回应简洁**：避免写长篇大论，除非问题本身需要详细解释。
-6.  **避免陈词滥调**：不要使用“嗯”、“啊”、“那个”等过多的语气词填充，除非这符合你的语言风格。
-7.  **自然衔接**：你的回应应自然地衔接上文（包括之前的简短回复"{immediate_response}"）。
-8.  **融入回忆**：如果提供的回忆片段与当前对话相关，请自然地将其中的信息（特别是印象内容）融入到你的回应中，但不要生硬地复述，而是像自然回忆一样提及。
-"""
+        **核心要求：**
+        1.  **模拟真实对话**：你的回应应该像真实的人在说话，而不是在做自我介绍或表演。不要上来就描述自己的性格、价值观或生活习惯。
+        2.  **就事论事**：直接回答用户的问题或回应用户的话，不要过度解释或展开无关话题。
+        3.  **动态称呼**：根据对话上下文中的信息，分析并使用最自然、最符合关系和性格的称呼来指代对方（例如"妈妈"、"爸爸"、"老师"、"同学"、"朋友"、"您"、对方的名字或昵称等）。**不要**生硬地使用关系词或直接叫名字（除非上下文明确表明这是合适的）。
+        4.  **语气贴合性格**：你的回应语气、用词、态度应与你的性格特质（特别是神经质、宜人性、开放性、外向性）和价值观一致。例如，高神经质可能更敏感、谨慎；低宜人性可能更直接、坚持自我边界；高开放性可能更愿意尝试新表达；高外向性可能更主动、热情。
+        5.  **回应简洁**：避免写长篇大论，除非问题本身需要详细解释。
+        6.  **避免陈词滥调**：不要使用“嗯”、“啊”、“那个”等过多的语气词填充，除非这符合你的语言风格。
+        7.  **自然衔接**：你的回应应自然地衔接上文（包括之前的简短回复"{immediate_response}"）。
+        8.  **融入回忆**：如果提供的回忆片段与当前对话相关，请自然地将其中的信息（特别是印象内容）融入到你的回应中，但不要生硬地复述，而是像自然回忆一样提及。
+        """
 
         history_str = ""
         if conversation_history:
@@ -390,11 +524,11 @@ class ResponseFlow:
             ]) + "\n"
 
         user_prompt = f"""
-{history_str}
-用户当前问题：{user_input}
+        {history_str}
+        用户当前问题：{user_input}
 
-请以{character_data.get('name')}的身份，按上述要求进行回应：
-"""
+        请以{character_data.get('name')}的身份，按上述要求进行回应：
+        """
 
         response_content = await self.character_llm.client.generate_response(system_prompt=system_prompt, user_prompt=user_prompt)
 
@@ -438,7 +572,8 @@ class ResponseFlow:
                 "duration": event_data.get("duration", impression_data.get("duration", "")),
                 "context_before": event_data.get("context_before", impression_data.get("context_before", "")),
                 "context_after": event_data.get("context_after", impression_data.get("context_after", "")),
-                "relevance": imp.get("strength", 50) / 100.0 # 使用强度作为相关性
+                "relevance": imp.get("strength", 50) / 100.0, # 使用强度作为相关性
+                "source": imp.get("source", "unknown") # 添加来源信息
             }
             processed_impressions_as_memories.append(memory_entry)
 
@@ -458,9 +593,9 @@ class ResponseFlow:
         user_context = self._build_user_context(character_data, user_character_data)
 
         simplified_system_prompt = f"""
-你是{character_data.get('name')}。{user_context}
-请非常快速地回复（1-2句，50字以内），符合你的语言风格：{character_data.get('language_style')}，不涉及具体记忆细节。注意根据上下文分析，使用合适的称呼。
-"""
+        你是{character_data.get('name')}。{user_context}
+        请非常快速地回复（1-2句，50字以内），符合你的语言风格：{character_data.get('language_style')}，不涉及具体记忆细节。注意根据上下文分析，使用合适的称呼。
+        """
         history_str = "\n".join([f"{'用户' if t['role']=='user' else '你'}: {t['content']}" for t in (conversation_history[-2:] if conversation_history else [])])
         user_prompt = f"{history_str}\n用户：{user_input}\n你的简短回复："
 
@@ -476,10 +611,10 @@ class ResponseFlow:
         user_context = self._build_user_context(character_data, user_character_data)
 
         simplified_system_prompt = f"""
-你是{character_data.get('name')}。{user_context}
-需基于以下人设快速回答（100-150字），贴合人设和语言风格。
-人设：{character_data.get('values')} | {character_data.get('hobby')} | {character_data.get('living_habit')} | 语言风格：{character_data.get('language_style')}
-"""
+        你是{character_data.get('name')}。{user_context}
+        需基于以下人设快速回答（100-150字），贴合人设和语言风格。
+        人设：{character_data.get('values')} | {character_data.get('hobby')} | {character_data.get('living_habit')} | 语言风格：{character_data.get('language_style')}
+        """
         history_str = "\n".join([f"{'用户' if t['role']=='user' else '你'}: {t['content']}" for t in (conversation_history or [])])
         user_prompt = f"{history_str}\n用户：{user_input}\n你的回答："
 
@@ -495,8 +630,8 @@ class ResponseFlow:
         user_context = self._build_user_context(character_data, user_character_data)
 
         simplified_system_prompt = f"""
-你是{character_data.get('name')}，想不起{user_context}的相关记忆片段。请自然地回应（50-100字），符合语言风格：{character_data.get('language_style')}，可用生活习惯等解释（如"可能忘记了""不常回想"），不提"记忆""系统"等词，呼应之前回复：{immediate_response}。注意根据上下文使用合适的称呼。
-"""
+        你是{character_data.get('name')}，想不起{user_context}的相关记忆片段。请自然地回应（50-100字），符合语言风格：{character_data.get('language_style')}，可用生活习惯等解释（如"可能忘记了""不常回想"），不提"记忆""系统"等词，呼应之前回复：{immediate_response}。注意根据上下文使用合适的称呼。
+        """
         user_prompt = f"用户：{user_input}\n你之前说：{immediate_response}\n你的回复："
 
         return await self.character_llm.client.generate_response(simplified_system_prompt, user_prompt)

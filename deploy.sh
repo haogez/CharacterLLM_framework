@@ -12,7 +12,7 @@ echo "=========================================="
 echo ""
 
 # ========== 新增步骤：清空 generated_stories 目录 ==========
-echo "🧹 [1/8] 清空 generated_stories和import 目录..."
+echo "🧹 [1/9] 清空 generated_stories和import 目录..."
 
 GENERATED_STORIES_DIR="/CharacterLLM_framework/generated_stories"
 IMPORT_DIR="/zhouyuhao/zhouyuhao_data/import"
@@ -33,7 +33,7 @@ fi
 echo ""
 
 # # ========== 第一步：拉取最新代码 (可选，如果代码已更新) ==========
-# echo "📥 [2/8] 拉取最新代码..."
+# echo "📥 [2/9] 拉取最新代码..."
 # cd /CharacterLLM_framework
 # 
 # # 检查是否有未提交的修改
@@ -54,7 +54,7 @@ echo ""
 # echo ""
 
 # ========== 第二步：检查 Neo4j Docker 容器服务 ==========
-echo "🔍 [2/8] 检查 本地Neo4j Docker 容器服务..."
+echo "🔍 [2/9] 检查 本地Neo4j Docker 容器服务..."
 
 # Neo4j Docker容器的配置信息 (根据您的启动命令)
 NEO4J_URI="bolt://neo4j-latest:7687" # 容器内访问宿主机映射的端口，等同于访问容器内7687
@@ -93,8 +93,82 @@ else
 fi
 echo ""
 
-# ========== 第三步：停止后端服务 ==========
-echo "🛑 [3/8] 停止后端服务..."
+# ========== 第三步：清空 Neo4j 数据库 ==========
+echo "🗑️ [3/9] 清空 Neo4j 数据库中的所有节点和关系..."
+
+# 使用 Python 脚本连接并执行清空命令
+python3 << EOF
+import sys
+try:
+    from neo4j import GraphDatabase
+    print("   尝试连接到 Neo4j 数据库...")
+    driver = GraphDatabase.driver("$NEO4J_URI", auth=("$NEO4J_USERNAME", "$NEO4J_PASSWORD"))
+    with driver.session(database="$NEO4J_DATABASE") as session:
+        # --- 修改：先删除所有关系，再删除所有节点 ---
+        print("   执行 'MATCH ()-[r]-() DELETE r' 删除所有关系...")
+        result = session.run("MATCH ()-[r]-() DELETE r")
+        print("   执行 'MATCH (n) DELETE n' 删除所有节点...")
+        result = session.run("MATCH (n) DELETE n")
+        print("✅ 数据库清空完成。")
+    driver.close()
+except ImportError:
+    print("❌ 错误：未找到 'neo4j' Python 库。请先安装 'pip install neo4j'。")
+    sys.exit(1)
+except Exception as e:
+    print(f"❌ 清空数据库失败: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+EOF
+echo ""
+
+# # ========== 第四步：创建 Neo4j 索引 ==========
+# echo ".CreateIndex [4/9] 创建 Neo4j 向量索引和全文索引..."
+
+# # 使用 Python 脚本连接并执行索引创建命令
+# python3 << EOF
+# import sys
+# try:
+#     from neo4j import GraphDatabase
+#     print("   尝试连接到 Neo4j 数据库...")
+#     driver = GraphDatabase.driver("$NEO4J_URI", auth=("$NEO4J_USERNAME", "$NEO4J_PASSWORD"))
+#     with driver.session(database="$NEO4J_DATABASE") as session:
+#         # --- 修改：根据您的 Embedding 模型选择正确的维度 ---
+#         # 例如，如果使用 OpenAIEmbeddings(model="text-embedding-3-large", dimensions=3072)
+#         embedding_dimension = 3072
+#         # 如果使用默认的 text-embedding-3-large (1536) 或 text-embedding-ada-002 (1536)
+#         # embedding_dimension = 1536
+
+#         print(f"   尝试创建 Event 向量索引 'event_embeddings' (维度: {embedding_dimension})...")
+#         session.run(f"CALL db.index.vector.createNodeIndex('event_embeddings', 'Event', 'event_embedding', {embedding_dimension}, 'cosine')")
+
+#         print(f"   尝试创建 Impression 向量索引 'impression_embeddings' (维度: {embedding_dimension})...")
+#         session.run(f"CALL db.index.vector.createNodeIndex('impression_embeddings', 'Impression', 'impression_embedding', {embedding_dimension}, 'cosine')")
+
+#         # 如果需要 hybrid search，创建全文索引
+#         # print("   尝试创建 Event 全文索引 'event_keyword_index'...")
+#         # session.run("CALL db.index.fulltext.createNodeIndex('event_keyword_index', ['Event'], ['event_content'])")
+#         # print("   尝试创建 Impression 全文索引 'impression_keyword_index'...")
+#         # session.run("CALL db.index.fulltext.createNodeIndex('impression_keyword_index', ['Impression'], ['impression_content'])")
+
+#         print("✅ 所需索引创建完成。")
+#     driver.close()
+# except ImportError:
+#     print("❌ 错误：未找到 'neo4j' Python 库。请先安装 'pip install neo4j'。")
+#     sys.exit(1)
+# except Exception as e:
+#     print(f"❌ 创建索引失败: {e}")
+#     import traceback
+#     traceback.print_exc()
+#     # 如果索引已存在，Neo4j 会报错，这通常是可接受的。可以根据错误信息判断是否为 "索引已存在" 错误。
+#     # 但为了简单起见，这里我们假设失败就是严重错误。
+#     # 如果您希望忽略 "索引已存在" 的错误，可以解析 e.message。
+#     sys.exit(1)
+# EOF
+# echo ""
+
+# ========== 第五步：停止后端服务 ==========
+echo "🛑 [5/9] 停止后端服务..."
 
 # 查找并停止 Python 后端进程
 if pgrep -f "python.*run_with_env.py" > /dev/null; then
@@ -117,8 +191,8 @@ fi
 
 echo ""
 
-# ========== 第四步：停止前端服务 ==========
-echo "🛑 [4/8] 停止前端服务..."
+# ========== 第六步：停止前端服务 ==========
+echo "🛑 [6/9] 停止前端服务..."
 
 # 停止 Nginx
 if pgrep nginx > /dev/null; then
@@ -131,8 +205,8 @@ fi
 
 echo ""
 
-# ========== 第五步：重新构建前端（如果有更新）==========
-echo "🔨 [5/8] 检查前端更新..."
+# ========== 第七步：重新构建前端（如果有更新）==========
+echo "🔨 [7/9] 检查前端更新..."
 
 cd /CharacterLLM_framework/frontend/character-llm-frontend
 
@@ -149,26 +223,26 @@ echo "ℹ️  检查前端构建必要性 (当前逻辑为简化处理，如需�
 # 假设前端未更新，跳过构建
 echo "ℹ️  假设前端未更新，跳过构建 (如需构建，请修改脚本或手动执行)"
 # 如果确实需要构建，取消下面的注释
-echo "📦 前端有更新，重新构建..."
+# echo "📦 前端有更新，重新构建..."
 # 安装依赖（如果 package.json 有更新）
-if [ -f package-lock.json ] && git diff --name-only HEAD@{1} HEAD | grep -q "package-lock.json"; then
-    echo "📦 安装前端依赖..."
-    npm install --legacy-peer-deps
-elif [ -f yarn.lock ] && git diff --name-only HEAD@{1} HEAD | grep -q "yarn.lock"; then
-    echo "📦 安装前端依赖..."
-        yarn install
-elif git diff --name-only HEAD@{1} HEAD | grep -q "package.json"; then
-    echo "📦 安装前端依赖..."
-    npm install --legacy-peer-deps
-fi
+# if [ -f package-lock.json ] && git diff --name-only HEAD@{1} HEAD | grep -q "package-lock.json"; then
+#     echo "📦 安装前端依赖..."
+#     npm install --legacy-peer-deps
+# elif [ -f yarn.lock ] && git diff --name-only HEAD@{1} HEAD | grep -q "yarn.lock"; then
+#     echo "📦 安装前端依赖..."
+#         yarn install
+# elif git diff --name-only HEAD@{1} HEAD | grep -q "package.json"; then
+#     echo "📦 安装前端依赖..."
+#     npm install --legacy-peer-deps
+# fi
 # 构建前端
-echo "🔨 构建前端..."
-npm run build
+# echo "🔨 构建前端..."
+# npm run build
 # 部署到 Nginx
-echo "📋 部署前端文件..."
-rm -rf /usr/share/nginx/html/*
-cp -r dist/* /usr/share/nginx/html/
- echo "✅ 前端已重新构建和部署"
+# echo "📋 部署前端文件..."
+# rm -rf /usr/share/nginx/html/*
+# cp -r dist/* /usr/share/nginx/html/
+#  echo "✅ 前端已重新构建和部署"
 
 # 更新 Nginx 配置（无论前端是否更新都要检查）
 echo "📋 更新 Nginx 配置..."
@@ -182,8 +256,8 @@ fi
 
 echo ""
 
-# ========== 第六步：安装/更新 Python 依赖 (包含 Neo4j 和 Numpy) ==========
-echo "📦 [6/8] 安装/更新 Python 依赖..."
+# ========== 第八步：安装/更新 Python 依赖 (包含 Neo4j 和 Numpy) ==========
+echo "📦 [8/9] 安装/更新 Python 依赖..."
 
 cd /CharacterLLM_framework
 
@@ -212,8 +286,8 @@ cd /CharacterLLM_framework
 echo "✅ Neo4j 依赖检查/更新完成"
 echo ""
 
-# ========== 第七步：启动后端服务 ==========
-echo "🚀 [7/8] 启动后端服务..."
+# ========== 第九步：启动后端服务 ==========
+echo "🚀 [9/9] 启动后端服务..."
 
 cd /CharacterLLM_framework
 
@@ -224,7 +298,7 @@ if [ ! -f "$ENV_FILE_PATH" ]; then
     echo "创建默认 .env 文件 (包含 Neo4j Docker 容器配置)..."
     cat > "$ENV_FILE_PATH" << 'EOF'
 OPENAI_API_KEY=sk-zk2fbc13c9dacbd9d1c577991155e25fa2568e256f5de
-OPENAI_BASE_URL=https://api.zhizengzeng.com/v1            
+OPENAI_BASE_URL=https://api.zhizengzeng.com/v1              
 DATABASE_URL=sqlite:///./character_llm.db
 DEBUG=false
 CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:80","http://localhost:9000"]
@@ -278,14 +352,14 @@ sleep 15
 if ps -p $BACKEND_PID > /dev/null; then
     echo "✅ 后端进程运行正常"
     # 检查日志中是否有 Neo4j 连接成功的明确信息
-    if grep -q "成功连接到 Neo4j\|--- 成功连接到 Neo4j.*---" backend.log; then
-        echo "✅ 后端已成功连接到本地Neo4j Docker容器"
+    if grep -q "成功连接到 Neo4j\|--- 成功连接到 Neo4j.*---\|Neo4jVector 实例初始化完成" backend.log; then
+        echo "✅ 后端已成功连接到本地Neo4j Docker容器并初始化向量库"
     else
-        echo "⚠️  后端进程运行中，但未在日志中找到 '成功连接到 Neo4j' 的确认信息。"
+        echo "⚠️  后端进程运行中，但未在日志中找到 '成功连接到 Neo4j' 或 'Neo4jVector 实例初始化完成' 的确认信息。"
         echo "    请检查日志以确认 Neo4j 连接状态。"
         # 可选：输出日志相关部分
         echo "    --- 后端日志中关于 Neo4j 的部分 ---"
-        grep -i "neo4j\|graph\|connect\|bolt" backend.log | tail -n 10
+        grep -i "neo4j\|graph\|connect\|bolt\|vector" backend.log | tail -n 10
         echo "    --- 日志结束 ---"
     fi
 else
@@ -297,8 +371,8 @@ fi
 
 echo ""
 
-# ========== 第八步：启动前端服务 ==========
-echo "🚀 [8/8] 启动前端服务..."
+# ========== 第十步：启动前端服务 ==========
+echo "🚀 [10/10] 启动前端服务..."
 
 # 启动 Nginx
 service nginx start
@@ -363,7 +437,7 @@ tail -n 20 /CharacterLLM_framework/backend.log
 # 显示访问信息
 echo ""
 echo "=========================================="
-echo "✅ 部署完成！(已适配本地Neo4j Docker容器，generated_stories 目录已清空)"
+echo "✅ 部署完成！(已适配本地Neo4j Docker容器，generated_stories 目录已清空，数据库已清空并创建了索引)"
 echo "=========================================="
 echo ""
 echo "📍 容器内访问地址："

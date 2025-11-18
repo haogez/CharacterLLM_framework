@@ -6,33 +6,35 @@
 
 def log_section_start(title: str, char: str = "="):
     """打印分隔线开始的标题"""
-    print(f"\n{char*80}")
-    print(f" {title} ".center(80, char))
-    print(f"{char*80}")
+    print(f"\n{char*80}", flush=True) # 添加 flush=True
+    print(f" {title} ".center(80, char), flush=True) # 添加 flush=True
+    print(f"{char*80}", flush=True) # 添加 flush=True
 
 def log_section_end(char: str = "="):
     """打印分隔线结束"""
-    print(f"{char*80}\n")
+    print(f"{char*80}\n", flush=True) # 添加 flush=True
 
 def log_info(message: str, indent: int = 0):
     """打印信息日志"""
-    print("  " * indent + f"ℹ️  {message}")
+    print("  " * indent + f"ℹ️  {message}", flush=True) # 添加 flush=True
 
 def log_success(message: str, indent: int = 0):
     """打印成功日志"""
-    print("  " * indent + f"✅ {message}")
+    print("  " * indent + f"✅ {message}", flush=True) # 添加 flush=True
 
 def log_warning(message: str, indent: int = 0):
     """打印警告日志"""
-    print("  " * indent + f"⚠️  {message}")
+    print("  " * indent + f"⚠️  {message}", flush=True) # 添加 flush=True
 
 def log_error(message: str, indent: int = 0):
     """打印错误日志"""
-    print("  " * indent + f"❌ {message}")
+    print("  " * indent + f"❌ {message}", flush=True) # 添加 flush=True
 
 def log_debug(message: str, indent: int = 0):
     """打印调试日志（可选，生产环境可关闭）"""
-    print("  " * indent + f"🔍 {message}")
+    print("  " * indent + f"🔍 {message}", flush=True) # 添加 flush=True
+
+# ... (其余函数也类似修改) ...
 
 def log_character_creation(char_id: str, char_name: str, gen_time: float):
     """专门打印角色创建完成日志"""
