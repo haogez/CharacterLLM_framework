@@ -79,59 +79,18 @@ class GraphStore:
                     database=self.database,
                     embedding_node_property="impression_embedding", # 这个属性名需要在导入时创建
                     index_name="impression_embeddings", # 确保索引名称正确且维度匹配
-                    # search_type="vector", # 如果要使用 hybrid，必须确保 keyword_index_name 指向的全文索引存在
+                    search_type="vector",
                 )
                 print("✅ Neo4jVector (impressions) 初始化成功。")
             except Exception as e:
                 print(f"❌ Neo4jVector (impressions) 初始化失败: {e}")
                 print("   这可能导致语义搜索功能不可用，但应用将继续启动。")
-                # **修正：确保 traceback 可用**
                 import traceback as tb
                 tb.print_exc() # 打印完整堆栈跟踪
-                self.neo4j_vector_impressions = None # 设置为 None，后续需要检查
+                self.neo4j_vector_impressions = None
         else:
             print("⚠️  由于 Embeddings 初始化失败，跳过 Neo4jVector 初始化。")
             self.neo4j_vector_impressions = None
-        # --- 修改：初始化 Neo4jVector 实例用于 Event 节点 ---
-        # 注意：这里假设索引 "event_embeddings" (向量索引) 和 "event_keyword_index" (全文索引) 已在 Neo4j 中创建
-        # self.neo4j_vector_events = Neo4jVector.from_existing_index(
-        #     embedding=self.embeddings,
-        #     url=self.uri,
-        #     username=self.user,
-        #     password=self.password,
-        #     database=self.database,
-        #     embedding_node_property="event_embedding", # 这个属性名需要在导入时创建
-        #     index_name="event_embeddings", # 向量索引名，需要预先存在
-        #     # --- 修改：添加 keyword_index_name ---
-        #     keyword_index_name="event_keyword_index", # 全文索引名，需要预先存在
-        #     # --- 修改：search_type 改为 vector 或保持 hybrid (但必须提供 keyword_index_name) ---
-        #     search_type="vector", # 暂时改为 vector 以避免需要全文索引，或者确保 keyword_index_name 存在
-        #     # search_type="hybrid", # 如果要使用 hybrid，必须确保 keyword_index_name 指向的全文索引存在
-        #     # retrieval_query="""
-        #     # // 在检索时，返回 Event 节点及其关联的 Character 和 Impression 信息
-        #     # MATCH (e:Event {app_id: node.app_id})<-[:OF_EVENT]-(i:Impression)<-[:HAS_IMPRESSION]-(c:Character)
-        #     # RETURN e{.*, app_id: e.app_id}, i{.*, app_id: i.app_id}, c{.*, app_id: c.app_id}, score
-        #     # """
-        # )
-        # --- 修改：初始化 Neo4jVector 实例用于 Impression 节点 ---
-        self.neo4j_vector_impressions = Neo4jVector.from_existing_index(
-            embedding=self.embeddings,
-            url=self.uri,
-            username=self.user,
-            password=self.password,
-            database=self.database,
-            embedding_node_property="impression_embedding", # 这个属性名需要在导入时创建
-            index_name="impression_embeddings", # 向量索引名，需要预先存在
-            # --- 修改：添加 keyword_index_name (如果需要 hybrid) 或者使用 vector ---
-            # keyword_index_name="impression_keyword_index", # 全文索引名，需要预先存在
-            search_type="vector", # 暂时改为 vector
-            # search_type="hybrid", # 如果要使用 hybrid，必须确保 keyword_index_name 指向的全文索引存在
-            # retrieval_query="""
-            # // 在检索时，返回 Impression 节点及其关联的 Character 和 Event 信息
-            # MATCH (i:Impression {app_id: node.app_id})-[:OF_EVENT]->(e:Event)
-            # RETURN i{.*, app_id: i.app_id}, e{.*, app_id: e.app_id}, score
-            # """
-        )
         print("--- Neo4jVector 实例初始化完成 ---")
         # 使用通过挂载卷共享的目录
         self.temp_csv_dir = "/zhouyuhao/zhouyuhao_data_new/import"

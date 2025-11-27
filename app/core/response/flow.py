@@ -4,7 +4,6 @@
 
 import asyncio
 import json
-import os
 import re
 import time
 from typing import Dict, List, Any, Optional, AsyncGenerator
@@ -17,10 +16,7 @@ class ResponseFlow:
                 character_llm: Optional[CharacterLLM] = None,
                 graph_store: Optional[GraphStore] = None):
         self.character_llm = character_llm or CharacterLLM()
-        self.graph_store = graph_store or GraphStore(
-            # GraphStore 构造函数内部会使用 os.environ.get 和其自身的默认值
-            # 这样更简洁，且确保 GraphStore 的逻辑是唯一的权威来源
-        )
+        self.graph_store = graph_store or GraphStore()
         self.memory_type_rules = {
             "education": "需体现学习方式与思维模式的关联（如记忆中“如何学习”影响“现在如何思考”）",
             "work": "需包含职业技能与价值观的互动（如记忆中“解决问题的技能”反映“职业价值观”）",
