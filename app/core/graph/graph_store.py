@@ -25,6 +25,7 @@ import uuid
 import re
 import csv
 import base64
+import subprocess
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from neo4j import GraphDatabase
@@ -818,17 +819,20 @@ class GraphStore:
 
         with open(nodes_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = [
-                "node_id", "label", "name", "role", "age", "gender", "occupation", "past_experience", "background",
+                "node_id:ID", "label:LABEL", "name", "role", "age", "gender", "occupation", "past_experience", "background",
                 "topic", "context", "dialogue_content", "time_at_occurrence", "participants"
             ]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
 
+            def _write_node(row: Dict[str, Any]):
+                writer.writerow(row)
+
             # 主角与关联角色节点
             for is_main, char_data in [(True, main_character)] + [(False, rc) for rc in related_characters]:
-                writer.writerow({
-                    "node_id": char_data.get("id"),
-                    "label": "Character",
+                _write_node({
+                    "node_id:ID": char_data.get("id"),
+                    "label:LABEL": "Character",
                     "name": char_data.get("name", ""),
                     "role": "protagonist" if is_main else "related",
                     "age": char_data.get("age", ""),
@@ -843,11 +847,15 @@ class GraphStore:
                     "participants": ""
                 })
 
-            # 事件节点
+            # 事件节点与衍生节点
             for memory in sanitized_memories:
-                writer.writerow({
-                    "node_id": memory.get("id"),
-                    "label": "Event",
+                event_id = memory.get("id")
+                participants = memory.get("participants", []) or []
+                raw_dialogue = memory.get("dialogue_content", [])
+
+                _write_node({
+                    "node_id:ID": event_id,
+                    "label:LABEL": "Event",
                     "name": memory.get("topic", ""),
                     "role": "event",
                     "age": "",
@@ -857,10 +865,95 @@ class GraphStore:
                     "background": "",
                     "topic": memory.get("topic", ""),
                     "context": memory.get("context", ""),
-                    "dialogue_content": memory.get("dialogue_content", ""),
+                    "dialogue_content": json.dumps(raw_dialogue, ensure_ascii=False) if not isinstance(raw_dialogue, str) else raw_dialogue,
                     "time_at_occurrence": memory.get("time_at_occurrence", ""),
-                    "participants": ";".join(memory.get("participants", [])),
+                    "participants": ";".join(participants),
                 })
+
+                if memory.get("time_at_occurrence"):
+                    _write_node({
+                        "node_id:ID": f"{event_id}_time",
+                        "label:LABEL": "Time",
+                        "name": memory.get("time_at_occurrence"),
+                        "role": "time",
+                        "age": "",
+                        "gender": "",
+                        "occupation": "",
+                        "past_experience": "",
+                        "background": "",
+                        "topic": "",
+                        "context": "",
+                        "dialogue_content": "",
+                        "time_at_occurrence": memory.get("time_at_occurrence", ""),
+                        "participants": ""
+                    })
+
+                if memory.get("scene"):
+                    _write_node({
+                        "node_id:ID": f"{event_id}_location",
+                        "label:LABEL": "Place",
+                        "name": memory.get("scene"),
+                        "role": "location",
+                        "age": "",
+                        "gender": "",
+                        "occupation": "",
+                        "past_experience": "",
+                        "background": "",
+                        "topic": "",
+                        "context": memory.get("context", ""),
+                        "dialogue_content": "",
+                        "time_at_occurrence": memory.get("time_at_occurrence", ""),
+                        "participants": ""
+                    })
+
+                if memory.get("topic"):
+                    _write_node({
+                        "node_id:ID": f"{event_id}_topic",
+                        "label:LABEL": "Topic",
+                        "name": memory.get("topic"),
+                        "role": "topic",
+                        "age": "",
+                        "gender": "",
+                        "occupation": "",
+                        "past_experience": "",
+                        "background": "",
+                        "topic": memory.get("topic", ""),
+                        "context": "",
+                        "dialogue_content": "",
+                        "time_at_occurrence": memory.get("time_at_occurrence", ""),
+                        "participants": ""
+                    })
+
+                dialogue_list = []
+                if isinstance(raw_dialogue, list):
+                    for entry in raw_dialogue:
+                        if isinstance(entry, dict):
+                            speaker = entry.get("speaker") or entry.get("角色") or entry.get("人物")
+                            content = entry.get("content") or entry.get("台词") or entry.get("对白") or entry.get("对话")
+                            if content:
+                                dialogue_list.append({"speaker": speaker, "content": content})
+                        elif isinstance(entry, str):
+                            dialogue_list.append({"speaker": None, "content": entry})
+                elif isinstance(raw_dialogue, str) and raw_dialogue.strip():
+                    dialogue_list.append({"speaker": None, "content": raw_dialogue})
+
+                for idx, dialogue in enumerate(dialogue_list):
+                    _write_node({
+                        "node_id:ID": f"{event_id}_dialogue_{idx}",
+                        "label:LABEL": "Dialogue",
+                        "name": dialogue.get("content", "")[:128],
+                        "role": "dialogue",
+                        "age": "",
+                        "gender": "",
+                        "occupation": "",
+                        "past_experience": "",
+                        "background": "",
+                        "topic": memory.get("topic", ""),
+                        "context": memory.get("context", ""),
+                        "dialogue_content": dialogue.get("content", ""),
+                        "time_at_occurrence": memory.get("time_at_occurrence", ""),
+                        "participants": dialogue.get("speaker", "") or ""
+                    })
 
         name_to_id = {main_character.get("name"): main_character.get("id")}
         for rc in related_characters:
@@ -873,37 +966,95 @@ class GraphStore:
             return float(match.group(1)) if match else float("inf")
 
         with open(relationships_filename, 'w', newline='', encoding='utf-8') as rel_csv:
-            fieldnames = ["start_id", "end_id", "type", "description"]
+            fieldnames = ["start_id:START_ID", "end_id:END_ID", "type:TYPE", "description"]
             writer = csv.DictWriter(rel_csv, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
 
-            # 主角 -> 事件，关联角色 -> 事件
+            def _write_rel(row: Dict[str, Any]):
+                writer.writerow(row)
+
             for memory in sanitized_memories:
                 event_id = memory.get("id")
-                writer.writerow({
-                    "start_id": main_character.get("id"),
-                    "end_id": event_id,
-                    "type": "PROTAGONIST_EVENT",
+                _write_rel({
+                    "start_id:START_ID": main_character.get("id"),
+                    "end_id:END_ID": event_id,
+                    "type:TYPE": "PROTAGONIST_EVENT",
                     "description": "主角参与事件"
                 })
 
                 for participant in memory.get("participants", []):
                     participant_id = name_to_id.get(participant)
                     if participant_id and participant_id != main_character.get("id"):
-                        writer.writerow({
-                            "start_id": participant_id,
-                            "end_id": event_id,
-                            "type": "ASSOCIATED_EVENT",
+                        _write_rel({
+                            "start_id:START_ID": participant_id,
+                            "end_id:END_ID": event_id,
+                            "type:TYPE": "ASSOCIATED_EVENT",
                             "description": f"{participant} 参与事件"
                         })
 
-            # 事件时间链
+                if memory.get("time_at_occurrence"):
+                    _write_rel({
+                        "start_id:START_ID": event_id,
+                        "end_id:END_ID": f"{event_id}_time",
+                        "type:TYPE": "EVENT_TIME",
+                        "description": "事件发生时间"
+                    })
+
+                if memory.get("scene"):
+                    _write_rel({
+                        "start_id:START_ID": event_id,
+                        "end_id:END_ID": f"{event_id}_location",
+                        "type:TYPE": "EVENT_LOCATION",
+                        "description": "事件发生地点"
+                    })
+
+                if memory.get("topic"):
+                    _write_rel({
+                        "start_id:START_ID": event_id,
+                        "end_id:END_ID": f"{event_id}_topic",
+                        "type:TYPE": "EVENT_TOPIC",
+                        "description": "事件主题"
+                    })
+
+                raw_dialogue = memory.get("dialogue_content", [])
+                dialogue_list = []
+                if isinstance(raw_dialogue, list):
+                    for entry in raw_dialogue:
+                        if isinstance(entry, dict):
+                            speaker = entry.get("speaker") or entry.get("角色") or entry.get("人物")
+                            content = entry.get("content") or entry.get("台词") or entry.get("对白") or entry.get("对话")
+                            if content:
+                                dialogue_list.append({"speaker": speaker, "content": content})
+                        elif isinstance(entry, str):
+                            dialogue_list.append({"speaker": None, "content": entry})
+                elif isinstance(raw_dialogue, str) and raw_dialogue.strip():
+                    dialogue_list.append({"speaker": None, "content": raw_dialogue})
+
+                for idx, dialogue in enumerate(dialogue_list):
+                    dialogue_id = f"{event_id}_dialogue_{idx}"
+                    _write_rel({
+                        "start_id:START_ID": event_id,
+                        "end_id:END_ID": dialogue_id,
+                        "type:TYPE": "EVENT_DIALOGUE",
+                        "description": "事件相关对话"
+                    })
+
+                    speaker_name = dialogue.get("speaker")
+                    speaker_id = name_to_id.get(speaker_name) if speaker_name else None
+                    if speaker_id:
+                        _write_rel({
+                            "start_id:START_ID": dialogue_id,
+                            "end_id:END_ID": speaker_id,
+                            "type:TYPE": "DIALOGUE_SPOKEN_BY",
+                            "description": "对话发言者"
+                        })
+
             ordered_memories = sorted(sanitized_memories, key=lambda m: _parse_age(m.get("time_at_occurrence", "")))
             for idx in range(len(ordered_memories) - 1):
-                writer.writerow({
-                    "start_id": ordered_memories[idx].get("id"),
-                    "end_id": ordered_memories[idx + 1].get("id"),
-                    "type": "NEXT_EVENT",
+                _write_rel({
+                    "start_id:START_ID": ordered_memories[idx].get("id"),
+                    "end_id:END_ID": ordered_memories[idx + 1].get("id"),
+                    "type:TYPE": "NEXT_EVENT",
                     "description": "时间顺序"
                 })
 
@@ -913,19 +1064,65 @@ class GraphStore:
             "relationships_file": os.path.basename(relationships_filename),
         }
 
+    def _run_admin_import(self, nodes_csv: str, relationships_csv: str, database: Optional[str] = None) -> bool:
+        """使用 neo4j-admin 离线导入 CSV，不直接书写 Cypher。"""
+        db_name = database or self.database
+        neo4j_home = os.environ.get("NEO4J_HOME")
+        admin_bin = os.environ.get("NEO4J_ADMIN_BIN")
+
+        if admin_bin:
+            neo4j_admin = admin_bin
+        elif neo4j_home:
+            neo4j_admin = os.path.join(neo4j_home, "bin", "neo4j-admin")
+        else:
+            neo4j_admin = "neo4j-admin"
+
+        nodes_path = os.path.abspath(nodes_csv)
+        rels_path = os.path.abspath(relationships_csv)
+
+        for path in [nodes_path, rels_path]:
+            if not os.path.exists(path):
+                print(f"❌ 未找到 CSV 文件: {path}")
+                return False
+
+        cmd = [
+            neo4j_admin,
+            "database", "import", "full",
+            "--overwrite",
+            f"--nodes={nodes_path}",
+            f"--relationships={rels_path}",
+            db_name
+        ]
+
+        print(f"执行 neo4j-admin 导入: {' '.join(cmd)}")
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print(result.stdout)
+            if result.stderr:
+                print(result.stderr)
+            print("✅ CSV 已通过 neo4j-admin 导入（需确保数据库处于离线状态）。")
+            return True
+        except FileNotFoundError:
+            print("❌ 未找到 neo4j-admin，可通过设置 NEO4J_HOME 或 NEO4J_ADMIN_BIN 指定路径。")
+            return False
+        except subprocess.CalledProcessError as exc:
+            print(f"❌ 导入失败: {exc.stderr or exc.stdout}")
+            return False
+
     def import_nodes_from_csv(self, csv_filename: str) -> bool:
-        print("⚠️ 已停用代码层面的 Cypher 导入，请使用 Neo4j-admin 或 Neo4j Desktop 的 CSV 导入功能。")
-        return False
+        print("⚠️ 已切换为 neo4j-admin 离线导入流程，确保数据库处于停止状态。")
+        rels = os.path.join(os.path.dirname(csv_filename), f"timeline_graph_relationships_{os.path.basename(csv_filename).split('_')[-1]}")
+        return self._run_admin_import(csv_filename, rels)
 
     def import_entity_event_relationships_from_csv(self, csv_filename: str) -> bool:
-        print("⚠️ 已停用代码层面的 Cypher 导入，请使用 Neo4j 提供的 CSV 批量导入工具。")
-        return False
+        print("⚠️ 已切换为 neo4j-admin 离线导入流程，确保数据库处于停止状态。")
+        return self._run_admin_import(csv_filename, csv_filename)
 
     def import_temporal_chain_from_csv(self, csv_filename: str) -> bool:
-        print("⚠️ 已停用代码层面的 Cypher 导入，请使用 Neo4j 提供的 CSV 批量导入工具。")
-        return False
+        print("⚠️ 已切换为 neo4j-admin 离线导入流程，确保数据库处于停止状态。")
+        return self._run_admin_import(csv_filename, csv_filename)
 
     def import_character_to_character_relationships_from_csv(self, csv_filename: str) -> bool:
-        print("⚠️ 已停用代码层面的 Cypher 导入，请使用 Neo4j 提供的 CSV 批量导入工具。")
-        return False
+        print("⚠️ 已切换为 neo4j-admin 离线导入流程，确保数据库处于停止状态。")
+        return self._run_admin_import(csv_filename, csv_filename)
 
