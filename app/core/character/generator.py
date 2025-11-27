@@ -5,6 +5,7 @@
 import json
 import asyncio
 import uuid
+import re
 from typing import Dict, List, Any, Optional, Tuple
 
 from app.core.llm.openai_client import CharacterLLM, OpenAIClient
@@ -373,8 +374,19 @@ class CharacterGenerator:
             character_data["gender"] = "Unknown gender"
         if "occupation" not in character_data:
             character_data["occupation"] = "Unknown occupation"
+        if "past_experience" not in character_data:
+            character_data["past_experience"] = ""
+        else:
+            character_data["past_experience"] = self._ensure_timeline_format(
+                character_data["past_experience"], "past_experience", character_data["age"]
+            )
+
         if "background" not in character_data:
             character_data["background"] = "Unknown background"
+        else:
+            character_data["background"] = self._ensure_timeline_format(
+                character_data["background"], "background", character_data["age"]
+            )
         
         if "personality" not in character_data:
             character_data["personality"] = {
@@ -392,3 +404,26 @@ class CharacterGenerator:
         
         if "speech_style" not in character_data:
             character_data["speech_style"] = "Neutral and standard speech pattern."
+
+    def _ensure_timeline_format(self, text: str, label: str, max_age: int) -> str:
+        """
+        Ensure timeline fields strictly follow the "X岁时：..." pattern.
+        Raises ValueError when the pattern is missing so upstream prompts must comply.
+        """
+        if not isinstance(text, str):
+            raise ValueError(f"{label} 必须是字符串且需包含按年龄分段的经历。")
+
+        segments = re.findall(r"(\d+(?:\.\d+)?岁时：[^。]*。?)", text)
+        if not segments:
+            raise ValueError(
+                f"{label} 缺少按 'X岁时：' 切分的经历，请补充从 0 岁到 {max_age} 岁的时间线描述。"
+            )
+
+        normalized_segments = []
+        for seg in segments:
+            normalized = seg.strip()
+            if not normalized.endswith("。"):
+                normalized += "。"
+            normalized_segments.append(normalized)
+
+        return "".join(normalized_segments)
