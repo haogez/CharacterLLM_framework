@@ -15,8 +15,12 @@ class CharacterGenerator:
         self.character_llm = character_llm or CharacterLLM()
     
     async def generate_character(self, description: str) -> Dict[str, Any]:
-        character_data = await self.character_llm.generate_character(description)
-        self._validate_and_fix_character_data(character_data)
+        character_data = await self.character_llm.generate_character(
+            description,
+            enforce_protagonist_relationship=True,
+            timeline_mode="strict",
+        )
+        self._validate_and_fix_character_data(character_data, strict_timeline=True)
         return character_data
 
     async def generate_related_characters(self, main_character: Dict[str, Any], count: int = 5) -> List[Dict[str, Any]]:
@@ -124,11 +128,15 @@ class CharacterGenerator:
             重要：生成的角色与主角的关系必须是 {entity_type}。
             """
             try:
-                related_char = await self.character_llm.generate_character(related_desc)
+                related_char = await self.character_llm.generate_character(
+                    related_desc,
+                    enforce_protagonist_relationship=False,
+                    relationship_override=entity_type,
+                    timeline_mode="relaxed",
+                )
                 related_char["id"] = related_char.get("id") or str(uuid.uuid4())
-                # **修改：在 generate_character 调用后，立即设置正确的 'relationship_to_protagonist' 字段**
-                # 这样可以确保即使 generate_character 内部有设置逻辑，也会被正确的值覆盖
                 related_char["relationship_to_protagonist"] = entity_type
+                self._validate_and_fix_character_data(related_char, strict_timeline=False)
                 related_characters.append(related_char)
                 print(f"  - 根据LLM分析生成关联角色 {generated_count+1}/{count}: {related_char.get('name')} ({related_char.get('occupation')}) - 关系: {entity_type}")
                 generated_count += 1
@@ -232,10 +240,15 @@ class CharacterGenerator:
                     请生成这个角色的详细信息。
                     """
                     try:
-                        related_char = await self.character_llm.generate_character(related_desc)
+                        related_char = await self.character_llm.generate_character(
+                            related_desc,
+                            enforce_protagonist_relationship=False,
+                            relationship_override=entity_type,
+                            timeline_mode="relaxed",
+                        )
                         related_char["id"] = related_char.get("id") or str(uuid.uuid4())
-                        # **修改：在 generate_character 调用后，立即设置正确的 'relationship_to_protagonist' 字段**
                         related_char["relationship_to_protagonist"] = entity_type
+                        self._validate_and_fix_character_data(related_char, strict_timeline=False)
                         related_characters.append(related_char)
                         print(f"  - 根据LLM推断的潜在角色生成 {generated_count+1}/{count}: {related_char.get('name')} ({related_char.get('occupation')}) - 关系: {entity_type}")
                         generated_count += 1
@@ -360,7 +373,7 @@ class CharacterGenerator:
         
         return all_memories
     
-    def _validate_and_fix_character_data(self, character_data: Dict[str, Any]) -> None:
+    def _validate_and_fix_character_data(self, character_data: Dict[str, Any], strict_timeline: bool = True) -> None:
         if "name" not in character_data:
             character_data["name"] = "Unknown name"
         if "age" not in character_data:
@@ -376,14 +389,14 @@ class CharacterGenerator:
             character_data["occupation"] = "Unknown occupation"
         if "past_experience" not in character_data:
             character_data["past_experience"] = ""
-        else:
+        elif strict_timeline:
             character_data["past_experience"] = self._ensure_timeline_format(
                 character_data["past_experience"], "past_experience", character_data["age"]
             )
 
         if "background" not in character_data:
             character_data["background"] = "Unknown background"
-        else:
+        elif strict_timeline:
             character_data["background"] = self._ensure_timeline_format(
                 character_data["background"], "background", character_data["age"]
             )

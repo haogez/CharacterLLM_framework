@@ -456,8 +456,15 @@ async def generate_and_store_fine_grained_memories(
             character_to_character_relationships=None # **关键修改：不再传入推断的关系列表**
         )
         log_info(f"CSV 文件保存完成，文件信息: {csv_files_info}")
+        nodes_csv = csv_files_info.get("nodes_file")
+        rels_csv = csv_files_info.get("relationships_file")
 
-        log_info("已生成 CSV 文件，请使用 Neo4j 的 csv 导入工具进行批量导入，不再在代码层执行 Cypher 导入。")
+        # 在线逐条 MERGE 导入，避免一次性 Cypher/LOAD CSV 卡死容器
+        imported = False
+        if nodes_csv and rels_csv:
+            imported = graph_store.import_graph_from_csv_online(nodes_csv, rels_csv)
+        if not imported:
+            log_warning("CSV 在线导入失败，请在数据库离线状态下使用 neo4j-admin import 再试。")
 
         memory_gen_time = time.time() - memory_start
         # 由于所有数据都已通过内部流程注入

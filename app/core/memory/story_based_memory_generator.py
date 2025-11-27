@@ -93,7 +93,12 @@ class StoryBasedMemoryGenerator:
             """
 
             try:
-                related_char = await self.character_llm.generate_character(related_desc)
+                related_char = await self.character_llm.generate_character(
+                    related_desc,
+                    enforce_protagonist_relationship=False,
+                    relationship_override=role_hint,
+                    timeline_mode="relaxed",
+                )
                 related_char["id"] = related_char.get("id") or str(uuid.uuid4())
                 related_characters.append(related_char)
                 log_info(f"  - 生成关联角色 {i+1}/{count}: {related_char.get('name')} ({related_char.get('occupation')})")

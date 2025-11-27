@@ -1109,6 +1109,74 @@ class GraphStore:
             print(f"❌ 导入失败: {exc.stderr or exc.stdout}")
             return False
 
+    def import_graph_from_csv_online(self, nodes_csv: str, relationships_csv: str, batch_size: int = 500) -> bool:
+        """
+        在线读取 CSV 并通过驱动逐条合并节点和关系，避免大批量 Cypher/LOAD CSV 导致卡死。
+        """
+        def _resolve_path(path: str) -> str:
+            return path if os.path.isabs(path) else os.path.join(self.temp_csv_dir, path)
+
+        nodes_path = _resolve_path(nodes_csv)
+        rels_path = _resolve_path(relationships_csv)
+
+        if not os.path.exists(nodes_path) or not os.path.exists(rels_path):
+            print(f"❌ 找不到节点或关系 CSV: {nodes_path}, {rels_path}")
+            return False
+
+        def merge_node(tx, label_list, app_id, props):
+            label_clause = ":" + ":".join(label_list) if label_list else ""
+            tx.run(
+                f"MERGE (n{label_clause} {{app_id: $app_id}}) SET n += $props",
+                app_id=app_id,
+                props=props,
+            )
+
+        def merge_rel(tx, start_id, end_id, rel_type, props):
+            tx.run(
+                f"MATCH (s {{app_id: $start_id}}) MATCH (e {{app_id: $end_id}}) MERGE (s)-[r:{rel_type}]->(e) SET r += $props",
+                start_id=start_id,
+                end_id=end_id,
+                props=props,
+            )
+
+        try:
+            with self.driver.session(database=self.database) as session:
+                with open(nodes_path, newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        app_id = row.get("node_id:ID")
+                        if not app_id:
+                            continue
+                        labels = [lbl.strip() for lbl in (row.get("label:LABEL") or "").split(";") if lbl.strip()]
+                        props = {k: v for k, v in row.items() if k not in {"node_id:ID", "label:LABEL"} and v not in ("", None)}
+                        session.execute_write(merge_node, labels, app_id, props)
+
+                with open(rels_path, newline='', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    buffer = []
+                    for row in reader:
+                        start_id = row.get("start_id:START_ID")
+                        end_id = row.get("end_id:END_ID")
+                        rel_type = (row.get("type:TYPE") or "").replace("`", "")
+                        if not all([start_id, end_id, rel_type]):
+                            continue
+                        props = {k: v for k, v in row.items() if k not in {"start_id:START_ID", "end_id:END_ID", "type:TYPE"} and v not in ("", None)}
+                        buffer.append((start_id, end_id, rel_type, props))
+                        if len(buffer) >= batch_size:
+                            for sid, eid, rtype, rprops in buffer:
+                                session.execute_write(merge_rel, sid, eid, rtype, rprops)
+                            buffer.clear()
+
+                    for sid, eid, rtype, rprops in buffer:
+                        session.execute_write(merge_rel, sid, eid, rtype, rprops)
+
+            print("✅ 已通过在线模式将 CSV 写入 Neo4j（逐条 MERGE，避免大批量导入堵塞）。")
+            return True
+        except Exception as e:
+            print(f"❌ 在线导入 CSV 失败: {e}")
+            traceback.print_exc()
+            return False
+
     def import_nodes_from_csv(self, csv_filename: str) -> bool:
         print("⚠️ 已切换为 neo4j-admin 离线导入流程，确保数据库处于停止状态。")
         rels = os.path.join(os.path.dirname(csv_filename), f"timeline_graph_relationships_{os.path.basename(csv_filename).split('_')[-1]}")
