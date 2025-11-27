@@ -15,7 +15,7 @@ echo ""
 echo "🧹 [1/9] 清空 generated_stories和import 目录..."
 
 GENERATED_STORIES_DIR="/CharacterLLM_framework/generated_stories"
-IMPORT_DIR="/zhouyuhao/zhouyuhao_data/import"
+IMPORT_DIR="/zhouyuhao/zhouyuhao_data_new/import"
 
 if [ -d "$GENERATED_STORIES_DIR" ]; then
     echo "   正在清空目录: $GENERATED_STORIES_DIR"
@@ -57,14 +57,14 @@ echo ""
 echo "🔍 [2/9] 检查 本地Neo4j Docker 容器服务..."
 
 # Neo4j Docker容器的配置信息 (根据您的启动命令)
-NEO4J_URI="bolt://neo4j-latest:7687" # 容器内访问宿主机映射的端口，等同于访问容器内7687
+NEO4J_URI="bolt://neo4j-latest-new:7687" # 容器内访问宿主机映射的端口，等同于访问容器内7687
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="zyh123456"
 NEO4J_DATABASE="neo4j"
 
 echo "   预配置的 Neo4j URI (容器内访问): $NEO4J_URI"
 echo "   预配置的 Neo4j Database: $NEO4J_DATABASE"
-echo "   (检查 neo4j-latest 容器是否正在运行且网络可达)..."
+echo "   (检查 neo4j-latest-new 容器是否正在运行且网络可达)..."
 echo ""
 
 # 检查 netcat 是否安装（用于测试端口连通性）
@@ -74,7 +74,7 @@ if ! command -v nc >/dev/null 2>&1; then
 fi
 
 # 测试容器到本地Neo4j映射端口的连通性
-NEO4J_HOST="neo4j-latest"
+NEO4J_HOST="neo4j-latest-new"
 NEO4J_BOLT_PORT="7687"
 echo "   测试连接：$NEO4J_HOST:$NEO4J_BOLT_PORT (容器内映射的Neo4j Bolt端口)..."
 if nc -zv $NEO4J_HOST $NEO4J_BOLT_PORT 2>/dev/null; then
@@ -82,13 +82,13 @@ if nc -zv $NEO4J_HOST $NEO4J_BOLT_PORT 2>/dev/null; then
 else
     echo "❌ 无法连接到本地Neo4j Docker容器的Bolt端口！"
     echo "    请检查以下问题："
-    echo "    1. Neo4j容器 'neo4j-latest' 是否正在运行？"
+    echo "    1. Neo4j容器 'neo4j-latest-new' 是否正在运行？"
     echo "    2. zhouyuhao容器是否能访问localhost:7687 (通常在Docker bridge网络下，localhost指宿主机)？"
     echo "    3. Neo4j容器的启动命令是否正确映射了端口 7687？"
     # 提供检查命令
     echo "    检查命令示例："
-    echo "      docker ps --filter name=neo4j-latest"
-    echo "      docker logs neo4j-latest"
+    echo "      docker ps --filter name=neo4j-latest-new"
+    echo "      docker logs neo4j-latest-new"
     exit 1
 fi
 echo ""
@@ -298,13 +298,13 @@ if [ ! -f "$ENV_FILE_PATH" ]; then
     echo "创建默认 .env 文件 (包含 Neo4j Docker 容器配置)..."
     cat > "$ENV_FILE_PATH" << 'EOF'
 OPENAI_API_KEY=sk-zk2fbc13c9dacbd9d1c577991155e25fa2568e256f5de
-OPENAI_BASE_URL=https://api.zhizengzeng.com/v1              
+OPENAI_BASE_URL=https://api.zhizengzeng.com/v1                
 DATABASE_URL=sqlite:///./character_llm.db
 DEBUG=false
 CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","http://localhost:80","http://localhost:9000"]
 CHROMA_PERSIST_DIRECTORY=./chroma_db
 # --- Neo4j Docker 容器配置 ---
-NEO4J_URI=bolt://neo4j-latest:7687
+NEO4J_URI=bolt://neo4j-latest-new:7687
 NEO4J_USERNAME=neo4j                      
 NEO4J_PASSWORD=zyh123456              
 NEO4J_DATABASE=neo4j
@@ -312,7 +312,7 @@ EOF
 else
     echo "ℹ️  .env 文件已存在: $ENV_FILE_PATH"
     # 检查 .env 文件中是否已包含 Docker Neo4j 的 URI
-    if grep -q "bolt://neo4j-latest:7687" "$ENV_FILE_PATH"; then
+    if grep -q "bolt://neo4j-latest-new:7687" "$ENV_FILE_PATH"; then
         echo "✅ .env 文件已包含 Neo4j Docker 容器 URI"
     else
         echo "⚠️  警告：.env 文件中未找到 Neo4j Docker 容器 URI！"
@@ -325,7 +325,7 @@ else
         sed -i '/^NEO4J_DATABASE/d' "$ENV_FILE_PATH"
         # 添加新配置
         echo -e "\n# --- Neo4j Docker 容器配置 ---" >> "$ENV_FILE_PATH"
-        echo "NEO4J_URI=bolt://neo4j-latest:7687" >> "$ENV_FILE_PATH"
+        echo "NEO4J_URI=bolt://neo4j-latest-new:7687" >> "$ENV_FILE_PATH"
         echo "NEO4J_USERNAME=neo4j" >> "$ENV_FILE_PATH"
         echo "NEO4J_PASSWORD=zyh123456" >> "$ENV_FILE_PATH"
         echo "NEO4J_DATABASE=neo4j" >> "$ENV_FILE_PATH"

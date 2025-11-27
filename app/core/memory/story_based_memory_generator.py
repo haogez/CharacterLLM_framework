@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import re
 import json
 import uuid
 import os
@@ -31,35 +32,35 @@ class StoryBasedMemoryGenerator:
     async def generate_idea(self, character_data: Dict[str, Any]) -> Dict[str, Any]:
         log_info(f"开始为角色 {character_data.get('name')} 进行灵感孵化...")
         start_time = time.time()
+        # **修改：从 background 中提取格式化的经历**
+        background = character_data.get('background', '')
+        # 使用正则表达式提取 "X岁时：..." 的部分
+        age_pattern = r"(\d+岁(?:\.\d+)?时：.*?)(?=\.|$|\d+岁(?:\.\d+)?时：)"
+        formatted_experiences = re.findall(age_pattern, background, re.DOTALL)
+        past_experiences_summary = "\n".join(formatted_experiences) if formatted_experiences else character_data.get('past_experience', '')
 
-        system_prompt = f"""
-        你是故事灵感孵化师。根据主角色的信息，构思一个适合的故事类型和核心主题。
-        例如：如果角色是“阴暗的宝妈”，可以是“家庭伦理剧，主题为母爱与自我救赎”。
-        如果角色是“叛逆的高中生”，可以是“青春成长剧，主题为寻找自我与突破束缚”。
+        system_prompt = f"""你是故事灵感孵化师。根据主角色的信息，特别是其背景故事中按年龄格式化的关键经历，构思一个适合的故事类型和核心主题。例如：如果角色是“阴暗的宝妈”，可以是“家庭伦理剧，主题为母爱与自我救赎”。如果角色是“叛逆的高中生”，可以是“青春成长剧，主题为寻找自我与突破束缚”。
 
         **主角色信息**:
-        {json.dumps(character_data, ensure_ascii=False, indent=2)}
+        {json.dumps({k: v for k, v in character_data.items() if k != 'background'}, ensure_ascii=False, indent=2)}
+
+        **主角色按年龄格式化的成长经历 (来自 background 字段)**:
+        {past_experiences_summary}
 
         **输出格式** (JSON):
         {{
             "story_type": "故事类型，如 '青春成长剧', '家庭伦理剧', '职场励志剧'",
             "core_theme": "核心主题，如 '寻找自我', '母爱与自我救赎', '成长与突破'",
-            "story_idea": "一个简短的故事想法概括，明确故事的主线和核心冲突"
+            "story_idea": "一个简短的故事想法概括，明确故事的主线和核心冲突，必须清晰点明由人设字段生成出来的人生成长经历具体事件，不能前后矛盾，要有因果影响。"
         }}
 
-        请严格按照上述格式输出JSON。
-        """
+        请严格按照上述格式输出JSON。"""
         user_prompt = f"请为角色 {character_data.get('name')} (职业: {character_data.get('occupation')}, 性格: {character_data.get('values')}) 孵化故事灵感。"
 
-        try:
-            result = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
-            log_success(f"角色 {character_data.get('name')} 的灵感孵化完成")
-            log_info(f"灵感孵化耗时: {time.time() - start_time:.2f} 秒")
-            return result
-        except Exception as e:
-            log_error(f"角色 {character_data.get('name')} 的灵感孵化失败: {e}")
-            log_info(f"灵感孵化耗时: {time.time() - start_time:.2f} 秒")
-            return {"story_type": "未知", "core_theme": "未知", "story_idea": "无"}
+        result = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
+        log_success(f"角色 {character_data.get('name')} 的灵感孵化完成")
+        log_info(f"灵感孵化耗时: {time.time() - start_time:.2f} 秒")
+        return result
 
     async def generate_related_characters(self, main_character: Dict[str, Any], story_idea: str, count: int = 5) -> List[Dict[str, Any]]:
         log_info(f"开始为角色 {main_character.get('name')} 生成 {count} 个关联角色...")
@@ -131,60 +132,67 @@ class StoryBasedMemoryGenerator:
         log_info(f"开始完善角色 {main_character.get('name')} 及其关联角色的背景故事...")
         start_time = time.time()
 
+        # **修改：Prompt 用于生成格式化的 background**
         main_char_background_prompt = f"""
         你是故事背景完善师。请为角色 {main_character.get('name')} (ID: {main_character.get('id')}) 生成一个更详细、更贴合其所有设定的背景故事。
         **主角色当前人设**:
-        {json.dumps(main_character, ensure_ascii=False, indent=2)}
+        {json.dumps({k: v for k, v in main_character.items() if k != 'background'}, ensure_ascii=False, indent=2)}
 
         **关联角色列表**:
         {json.dumps(related_characters, ensure_ascii=False, indent=2)}
 
         **要求**:
         1.  **时间线一致性**: 故事必须从0岁写到当前设定的{main_character.get('age')}岁，所有past_experience中提到的关键事件都必须在对应年龄段被详细描述。
-        2.  **人设锚定**: 严格体现personality五维分数、living_habit、values、dislike、appearance、social_pattern等所有字段。
-        3.  **关联角色互动**: 自然地融入关联角色，描述他们与主角色的互动，确保互动符合双方人设。例如，如果主角色social_pattern为“孤僻”，与他人的互动应体现这一点。
-        4.  **因果关系**: 明确past_experience中的事件如何导致当前的性格、habit、values等。
-        5.  **场景具象化**: 体现usual_place、favorite_thing、hobby等。
-        6.  **风格**: 客观清晰，包含必要的场景与心理描写。
+        2.  **格式化经历**: **核心修改**：严格按照以下格式生成背景故事，每个年龄（或年龄段）用冒号分隔：
+            "0岁时：[具体事件或描述]。1岁时：[具体事件或描述]。2岁时：[具体事件或描述]。3岁时：[具体事件或描述]。... 直至当前角色年龄 {main_character.get('age')}岁。[最后可选：一段连贯的文字总结角色的整体背景和性格形成过程，但这部分不强制，重点是前面的格式化经历]。"
+        3.  **人设锚定**: 严格体现personality五维分数、living_habit、values、dislike、appearance、social_pattern等所有字段。
+        4.  **关联角色互动**: 自然地融入关联角色，描述他们与主角色的互动，确保互动符合双方人设。例如，如果主角色social_pattern为“孤僻”，与他人的互动应体现这一点。
+        5.  **因果关系**: 明确past_experience中的事件如何导致当前的性格、habit、values等。
+        6.  **场景具象化**: 体现usual_place、favorite_thing、hobby等。
+        7.  **风格**: 客观清晰，包含必要的场景与心理描写。
 
-        请生成一个连贯的背景故事。
+        请生成一个连贯且格式化的背景故事。
         """
+
         try:
-            refined_main_background = await self.character_llm.client.generate_response(
-                system_prompt=main_char_background_prompt,
-                user_prompt="请生成详细背景故事。"
-            )
+            refined_main_background = await self.character_llm.client.generate_response(system_prompt=main_char_background_prompt, user_prompt="请生成详细背景故事（格式化经历）。")
             main_character['background'] = refined_main_background
             log_success(f"主角色 {main_character.get('name')} 的背景故事已完善。")
         except Exception as e:
             log_error(f"完善主角色 {main_character.get('name')} 背景故事失败: {e}")
+            # 如果失败，保留原始 background 或设置默认值
+            main_character['background'] = main_character.get('background', '背景故事生成失败。')
 
         for i, rel_char in enumerate(related_characters):
+            # 关联角色的 background 也最好格式化，或者保持原样，取决于后续如何使用
+            # 为了保持一致性，也可以要求格式化
             rel_char_background_prompt = f"""
             你是关联角色背景完善师。请为角色 {rel_char.get('name')} (ID: {rel_char.get('id')}) 生成一个背景故事。
             **关联角色当前人设**:
-            {json.dumps(rel_char, ensure_ascii=False, indent=2)}
+            {json.dumps({k: v for k, v in rel_char.items() if k != 'background'}, ensure_ascii=False, indent=2)}
 
             **主角色信息**:
-            {json.dumps(main_character, ensure_ascii=False, indent=2)}
+            {json.dumps({k: v for k, v in main_character.items() if k != 'background'}, ensure_ascii=False, indent=2)}
 
             **要求**:
             1.  **时间线**: 考虑 {main_character.get('name')} 的年龄 ({main_character.get('age')})，{rel_char.get('name')} 在 {main_character.get('name')} 的故事中出现时的年龄应合理。
-            2.  **互动一致性**: {rel_char.get('name')} 的行为、语言风格应与 {main_character.get('name')} 的人设 (特别是social_pattern, language_style等) 互动时产生合理的情节。
-            3.  **人设锚定**: 体现 {rel_char.get('name')} 自身的所有设定。
-            4.  **关联性**: 重点描述 {rel_char.get('name')} 与 {main_character.get('name')} 的关系和互动细节。
+            2.  **格式化经历**: **核心修改**：严格按照以下格式生成背景故事，每个年龄（或年龄段）用冒号分隔（如果年龄信息明确的话）：
+                "0岁时：[具体事件或描述]。1岁时：[具体事件或描述]。... 直至当前角色年龄或与主角色互动时的年龄。[最后可选：一段连贯的文字总结]。"
+                如果难以确定具体年龄，可以描述其人生阶段（如“童年时期”、“青年时期”）。
+            3.  **互动一致性**: {rel_char.get('name')} 的行为、语言风格应与 {main_character.get('name')} 的人设 (特别是social_pattern, language_style等) 互动时产生合理的情节。
+            4.  **人设锚定**: 体现 {rel_char.get('name')} 自身的所有设定。
+            5.  **关联性**: 重点描述 {rel_char.get('name')} 与 {main_character.get('name')} 的关系和互动细节。
 
-            请生成一个贴合主角色故事的背景故事。
+            请生成一个贴合主角色故事的格式化背景故事。
             """
+
             try:
-                refined_rel_background = await self.character_llm.client.generate_response(
-                    system_prompt=rel_char_background_prompt,
-                    user_prompt="请生成详细背景故事。"
-                )
+                refined_rel_background = await self.character_llm.client.generate_response(system_prompt=rel_char_background_prompt, user_prompt="请生成详细背景故事（格式化经历）。")
                 rel_char['background'] = refined_rel_background
                 log_success(f"关联角色 {rel_char.get('name')} 的背景故事已完善。")
             except Exception as e:
                 log_error(f"完善关联角色 {rel_char.get('name')} 背景故事失败: {e}")
+                rel_char['background'] = rel_char.get('background', '背景故事生成失败。')
 
         log_success(f"角色背景故事完善完成")
         log_info(f"完善角色背景耗时: {time.time() - start_time:.2f} 秒")
@@ -412,132 +420,124 @@ class StoryBasedMemoryGenerator:
 
         return boundaries
 
-    async def generate_chaptered_lifespan_story(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], story_idea: str) -> List[Dict[str, Any]]: # 修改返回类型
-        log_info(f"开始为角色 {main_character.get('name')} 生成分章节人生故事...")
+    async def generate_chaptered_lifespan_story(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], story_idea: str) -> List[Dict[str, Any]]:
+        """
+        直接生成结构化的对话场景列表，而不是小说体故事。
+        返回格式: [{"场景": "...", "参与者": [...], "主题": "...", "时间": "...", "背景": "...", "对话": "..."}, ...]
+        """
+        log_info(f"开始为角色 {main_character.get('name')} 生成结构化对话场景...")
         start_time = time.time()
 
-        main_char_age = main_character.get('age', 17)
-        main_char_name = main_character.get('name')
+        # 1. 从 main_character.background 提取格式化经历
+        background = main_character.get('background', '')
+        age_pattern = r"(\d+(?:\.\d+)?岁(?:\.\d+)?时：.*?)(?=\.|$|\d+(?:\.\d+)?岁(?:\.\d+)?时：)"
+        formatted_experiences = re.findall(age_pattern, background, re.DOTALL)
+        experiences_by_age = {}
+        for exp in formatted_experiences:
+            match = re.match(r"(\d+(?:\.\d+)?)岁(?:\.\d+)?时：(.*)", exp)
+            if match:
+                age = float(match.group(1))
+                content = match.group(2).strip()
+                experiences_by_age[age] = experiences_by_age.get(age, []) + [content]
+
+        # 2. 构建关联角色信息
         all_char_map = {main_character['id']: main_character}
         all_char_map.update({rc['id']: rc for rc in related_characters})
+        all_char_details = [f"{p_data['name']} (ID: {p_data['id']}, 职业: {p_data['occupation']})" for pid, p_data in all_char_map.items() if pid != main_character['id']]
 
-        age_ranges_to_use = self._calculate_chapter_boundaries(main_char_age)
-        log_info(f"计算出的章节边界: {age_ranges_to_use}")
+        # 3. 为每个有经历的年龄生成对话场景
+        generated_scenes = []
+        for age, experiences in sorted(experiences_by_age.items()):
+            if age > main_character.get('age', 100): # 跳过超出当前年龄的经历
+                continue
+            for i, exp_desc in enumerate(experiences):
+                log_info(f" - 为 {age} 岁生成场景 {i+1}...")
 
-        chaptered_stories = [] # 存储章节内容的列表
-        current_context = ""
+                # **修改：Prompt 用于生成对话场景**
+                system_prompt = f"""
+                你是对话场景构建师。根据角色 "{main_character.get('name')}" 在 {age} 岁时的特定经历描述，构建一个包含关键对话、动作、场景和背景的详细场景。
 
-        for age_range in age_ranges_to_use:
-            range_start = age_range['start']
-            range_end = age_range['end']
-            range_label = age_range['label']
+                **主角色信息**:
+                {json.dumps({k: v for k, v in main_character.items() if k not in ['background', 'past_experience']}, ensure_ascii=False, indent=2)}
 
-            if range_start > main_char_age:
-                 log_info(f"  - 跳过章节: {range_label} (超出角色当前年龄 {main_char_age})")
-                 continue
+                **关联角色信息**:
+                {json.dumps(related_characters, ensure_ascii=False, indent=2)}
 
-            log_info(f"  - 生成章节: {range_start}-{range_end}岁 ({range_label})")
+                **要求**:
+                1.  **时间**: 场景必须发生在 {age} 岁。
+                2.  **人设锚定**: 场景中的行为、对话、情感必须严格符合主角色和关联角色的人设（特别是 personality, values, language_style, speech_style, living_habit, social_pattern, appearance, family_status 等）。
+                3.  **基于经历**: 场景的核心内容必须来源于或体现以下经历描述："{exp_desc}"。
+                4.  **参与者**: 场景中的参与者必须是主角色或关联角色列表中的角色。
+                5.  **格式化输出**: 为该场景生成一个符合以下 JSON 格式的条目：
+                {{
+                    "场景": "场景发生的具体地点（如 家中, 学校教室, 公园等）",
+                    "参与者": ["角色A姓名", "角色B姓名", ...], // 列出场景中参与对话的所有角色姓名
+                    "主题": "场景对话的核心主题或讨论的问题",
+                    "时间": "{age}岁", // 场景发生时角色的年龄
+                    "背景": "场景发生的背景或原因，简述 '{exp_desc}'",
+                    "对话": "角色间的具体对话内容，格式为：\"角色名：（动作/表情描述）对话内容。角色名：（动作/表情描述）对话内容。...\"，至少五轮。必须详细描述动作、表情、语气。"
+                }}
 
-            # 构建章节特定的 past_experience
-            relevant_past_exp = []
-            for exp in main_character.get('past_experience', '').split('\n'):
-                 import re
-                 age_match = re.search(r'(\d{1,2})岁', exp)
-                 if age_match:
-                     exp_age = int(age_match.group(1))
-                     if range_start <= exp_age <= range_end:
-                         relevant_past_exp.append(exp)
-            relevant_past_exp_str = "\n".join(relevant_past_exp) if relevant_past_exp else "无明确提及此阶段的关键经历。"
+                **输出格式** (单个JSON对象):
+                {{
+                    "场景": "...",
+                    "参与者": ["..."],
+                    "主题": "...",
+                    "时间": "...",
+                    "背景": "...",
+                    "对话": "..."
+                }}
 
-            all_char_details = []
-            for pid, p_data in all_char_map.items():
-                age_diff = main_char_age - p_data['age']
-                char_age_at_range_start = (range_start + range_end) // 2 - age_diff
-                if char_age_at_range_start < 0 or (range_start >= 3 and char_age_at_range_start < 3):
-                     continue
-                all_char_details.append(f"{p_data['name']} (ID: {pid}, 当时约 {char_age_at_range_start} 岁, 职业: {p_data['occupation']})")
+                请严格按照上述格式输出单个JSON对象，不要添加其他解释文字。
+                """
 
-            # **修改 system_prompt：强调连续性、标龄、避免小结**
-            system_prompt = f"""
-            你是一个叙事体故事作家。请为角色 "{main_char_name}" (ID: {main_character['id']}) 写一段关于 {range_start}-{range_end} 岁 ({range_label}) 的故事章节。
-            **章节要求**:
-            1.  **时间线**: 严格限定在 {range_start}-{range_end} 岁，不得涉及后续年龄。
-            2.  **人设锚定**: 全面体现主角色的所有人设字段，特别是 personality (五维分数)、living_habit、values、dislike、appearance、social_pattern、usual_place、favorite_thing、hobby、skills。
-            3.  **事件整合**: 必须包含主角色 past_experience 中提及的此阶段关键事件：{relevant_past_exp_str}。
-            4.  **角色互动**: 自然融入以下角色：{', '.join(all_char_details)}。互动需符合主角色和关联角色的人设。
-            5.  **细节丰富**: 体现具体的地点、物品、感官细节、对话、心理活动，使其适配知识图谱提取。
-            6.  **风格**: 客观清晰，包含必要的场景与心理描写，避免模糊表述。
-            7.  **连贯性**: 与之前生成的章节内容保持连贯性，不要有突兀的过渡或小结。在故事中必须有清楚的来龙去脉，不能够突兀的出现一段故事情节，应该具有清晰合理的“起因、经过、结果”（但不要进行标注，需要连贯的故事体）。
-            8.  **字数要求**: 此章节内容**必须至少达到 2000 字**，详细描述该阶段的多个事件、场景、人物互动、心理变化等。
-            9.  **叙事风格**: 严格按照小说类型，对话部分使用标准引号和换行，非对话部分描述细腻，包含环境、动作、心理活动。
-            10. **连续性与标龄**: 请将此章节无缝衔接在之前章节之后，形成一个连续的故事流。在故事的关键节点或场景转换时，**明确标注当前角色的年龄**（例如：“当{main_char_name} **10岁**那年春天...” 或 “...{main_char_name} **12岁**的夏天，发生了一件...”）。**不要**为此章节写一个独立的、总结性的结尾小结，故事应流畅地过渡到下一个阶段（如果有的话）。
-            11. **内容完整性**: 确保本章节内容充实，覆盖了 {range_start}-{range_end} 岁这个年龄段的主要生活片段，以便后续能够从中提取出足够多的记忆。
+                user_prompt = f"请为 {age} 岁时的经历 '{exp_desc}' 构建一个详细的对话场景。"
 
-            **主角色完整人设**:
-            {json.dumps(main_character, ensure_ascii=False, indent=2)}
+                try:
+                    raw_result = await self.character_llm.client.generate_response(system_prompt, user_prompt)
+                    print(f"=== LLM 生成场景原始响应 (完整) ===")
+                    print(raw_result)
+                    print(f"=== 响应长度: {len(raw_result)} ===")
 
-            **关联角色人设**:
-            {json.dumps(related_characters, ensure_ascii=False, indent=2)}
+                    # 尝试解析为单个 JSON 对象
+                    try:
+                        parsed_scene = json.loads(raw_result)
+                        if isinstance(parsed_scene, dict):
+                            # 为每个场景生成唯一 ID
+                            scene_id = str(uuid.uuid4())
+                            # 添加 ID 并可能调整结构以符合系统期望（如果需要作为记忆存储）
+                            processed_scene = {
+                                "id": scene_id, # 添加唯一 ID
+                                "scene": parsed_scene.get("场景"),
+                                "participants": parsed_scene.get("参与者", []),
+                                "topic": parsed_scene.get("主题"),
+                                "time_at_occurrence": parsed_scene.get("时间"),
+                                "context": parsed_scene.get("背景"),
+                                "dialogue_content": parsed_scene.get("对话"),
+                                "original_context": raw_result # 可选：存储原始响应片段
+                            }
+                            generated_scenes.append(processed_scene)
+                        else:
+                            log_warning(f"LLM 为 {age} 岁场景 {i+1} 返回的不是 JSON 对象: {type(parsed_scene)}")
+                    except json.JSONDecodeError as e:
+                        log_error(f"解析 LLM 为 {age} 岁场景 {i+1} 生成的 JSON 失败: {e}")
+                        log_error(f"原始响应: {raw_result[:500]}...") # 记录前500字符以便调试
+                        continue # 跳过此场景
 
-            **故事灵感**:
-            {story_idea}
+                except Exception as e:
+                    log_error(f"为 {age} 岁场景 {i+1} 生成对话失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue # 跳过此场景
 
-            **当前故事上下文** (请确保衔接自然):
-            {current_context}
-
-            请生成 {range_start}-{range_end} 岁 ({range_label}) 的故事章节 (至少2000字，连续叙事，标龄，无小结):
-            """
-            user_prompt = f"请生成 {range_start}-{range_end} 岁 ({range_label}) 的故事章节。"
-
-            try:
-                chapter_story = await self.character_llm.client.generate_response(system_prompt, user_prompt)
-                # 不再添加章节标题，直接追加内容以保持连续性
-                # full_story_parts.append(chapter_story) # 移除
-
-                # **存储章节信息**
-                chapter_info = {
-                    "content": chapter_story,
-                    "start_age": range_start,
-                    "end_age": range_end,
-                    "label": range_label,
-                    "original_context": f"### 第{range_start}-{range_end}岁：{range_label}\n\n{chapter_story}" # 保留原始上下文（包含标题）用于保存
-                }
-                chaptered_stories.append(chapter_info)
-
-                current_context = current_context + "\n\n" + chapter_story
-
-                log_success(f"    - 章节 {range_start}-{range_end}岁 ({range_label}) 生成完成，长度: {len(chapter_story)} 字符")
-
-                part_filename = f"generated_stories/{main_character.get('id', 'unknown')}_story_chapter_{range_start}_{range_end}.txt"
-                with open(part_filename, "w", encoding="utf-8") as f:
-                    f.write(chapter_info["original_context"]) # 保存时包含标题
-
-            except Exception as e:
-                log_error(f"生成章节 {range_start}-{range_end}岁 ({range_label}) 失败: {e}")
-                chapter_info = {
-                    "content": f"[错误：未能生成此章节内容]\n",
-                    "start_age": range_start,
-                    "end_age": range_end,
-                    "label": range_label,
-                    "original_context": f"### 第{range_start}-{range_end}岁：{range_label}\n\n[错误：未能生成此章节内容]\n"
-                }
-                chaptered_stories.append(chapter_info)
-
-        # **保存完整的、带标题的连续故事**
-        full_story_with_titles = "\n\n".join([chapter["original_context"] for chapter in chaptered_stories])
-        final_story_filename = f"generated_stories/{main_character.get('id', 'unknown')}_lifespan_story_chaptered.txt"
-        with open(final_story_filename, "w", encoding="utf-8") as f:
-            f.write(full_story_with_titles)
-        log_success(f"最终分章节人生故事已保存到 {final_story_filename}")
-
-        log_success(f"角色 {main_char_name} 的分章节人生故事生成完成")
-        log_info(f"生成分章节故事耗时: {time.time() - start_time:.2f} 秒")
-        return chaptered_stories # 返回章节列表
+        log_success(f"为角色 {main_character.get('name')} 生成了 {len(generated_scenes)} 个结构化对话场景")
+        log_info(f"生成结构化对话场景耗时: {time.time() - start_time:.2f} 秒")
+        # **修改：返回场景列表，而不是章节列表**
+        return generated_scenes
 
     async def generate_character_lifespan_story(self, character_data: Dict[str, Any], related_characters: List[Dict[str, Any]], relationships: List[Dict[str, Any]]) -> str: # 保持返回完整故事字符串的接口，用于其他可能的用途
-        log_info(f"开始为角色 {character_data.get('name')} 生成人生故事...")
+        log_info(f"开始为角色 {character_data.get('name')} 生成人生故事 (新流程)...")
         start_time = time.time()
-
         story_idea = await self.generate_idea(character_data)
         if not story_idea:
             log_error("灵感孵化失败，无法继续生成故事。")
@@ -552,27 +552,26 @@ class StoryBasedMemoryGenerator:
 
         refined_main_char, refined_related_chars = await self.refine_characters_with_backgrounds(character_data, related_characters)
 
-        # **调用修改后的方法，获取章节列表**
-        chaptered_stories = await self.generate_chaptered_lifespan_story(refined_main_char, refined_related_chars, story_idea.get('story_idea', ''))
+        # **调用修改后的方法，获取结构化对话场景列表**
+        structured_scenes = await self.generate_chaptered_lifespan_story(refined_main_char, refined_related_chars, story_idea.get('story_idea', ''))
 
-        # **如果仍需要完整字符串（例如用于关系推断），可以在这里拼接**
-        full_story_string = "\n\n".join([chapter["original_context"] for chapter in chaptered_stories])
+        # **如果仍需要完整字符串（例如用于关系推断），可以在这里拼接场景对话内容**
+        # full_story_string = "\n\n".join([scene["dialogue_content"] for scene in structured_scenes])
+        full_story_string = json.dumps(structured_scenes, ensure_ascii=False, indent=2) # 或者其他合适的格式
 
-        log_success(f"角色 {character_data.get('name')} 的人生故事生成完成")
+        log_success(f"角色 {character_data.get('name')} 的人生故事 (结构化对话) 生成完成")
         log_info(f"总耗时: {time.time() - start_time:.2f} 秒")
-        return full_story_string # 或者返回 chaptered_stories，取决于其他地方的调用方式
+        return full_story_string # 返回 JSON 字符串或拼接的字符串，取决于其他地方的调用方式
 
-    async def extract_memories_from_lifespan_story(self, chaptered_stories: List[Dict[str, Any]], character_data: Dict[str, Any], related_characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]: # 修改参数
-        log_info(f"开始从分章节故事中提取记忆片段 (新模型)...")
+    async def extract_memories_from_lifespan_story(self, chaptered_stories: List[Dict[str, Any]], character_data: Dict[str, Any], related_characters: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        log_info(f"开始从分章节故事中提取对话场景 (新格式)...")
         start_time = time.time()
-
-        # 构建名称到ID的映射表
+        # 构建名称到ID的映射表（用于验证参与者）
         name_to_id_map = {}
         name_to_id_map[character_data.get('name')] = character_data.get('id')
         for rc in related_characters:
             name_to_id_map[rc.get('name')] = rc.get('id')
 
-        # 构建角色信息字符串，用于 LLM 理解上下文
         all_char_map = {character_data['id']: character_data}
         all_char_map.update({rc['id']: rc for rc in related_characters})
 
@@ -582,292 +581,151 @@ class StoryBasedMemoryGenerator:
             chapter_start_age = chapter_info["start_age"]
             chapter_end_age = chapter_info["end_age"]
             chapter_label = chapter_info["label"]
+            log_info(f" - 从章节 {chapter_start_age}-{chapter_end_age}岁 ({chapter_label}) 提取对话场景...")
 
-            log_info(f"  - 从章节 {chapter_start_age}-{chapter_end_age}岁 ({chapter_label}) 提取记忆...")
-
-            # **修改 Prompt：针对单个章节提取，明确年龄范围**
+            # **修改：Prompt 用于提取对话场景**
             system_prompt = f"""
-            你是记忆考古学家，任务是仔细阅读关于"{character_data.get('name')}"在{chapter_start_age}-{chapter_end_age}岁 ({chapter_label})的特定故事片段，并将片段中发生的每一个可记忆的事件、场景、对话、情绪、感觉、思考、行为等都识别出来，转换成详细的、结构化的记忆条目。
+            你是记忆考古学家，任务是仔细阅读关于"{character_data.get('name')}"在{chapter_start_age}-{chapter_end_age}岁 ({chapter_label})的特定故事片段，并从中识别出所有包含**关键对话**的重要场景。
 
             **重要要求**：
-            1.  **时间线**: 所有提取的记忆事件都必须发生在 {chapter_start_age}-{chapter_end_age} 岁之间。请根据故事内容推断具体事件发生时的年龄。
-            2.  **原始上下文**: 为每个提取的记忆提供其在当前章节原文中的**完整上下文段落**，即 "original_context" 字段。这应是故事中与该记忆直接相关的原始句子或段落。
-            3.  **年龄准确性**: 确保 "time.age" 字段准确反映事件发生时的年龄。
+            1.  **时间线**: 所有提取的场景都必须发生在 {chapter_start_age}-{chapter_end_age} 岁之间。请根据故事内容推断具体场景发生时的年龄。
+            2.  **对话场景**: 识别出包含至少五轮对话的场景。
+            3.  **格式化输出**: 为每个识别出的场景生成一个符合以下 JSON 格式的条目：
+            {{
+                "场景": "场景发生的具体地点（如 家中, 学校教室, 公园等）",
+                "参与者": ["角色A姓名", "角色B姓名", ...], // 列出场景中参与对话的所有角色姓名
+                "主题": "场景对话的核心主题或讨论的问题",
+                "时间": "场景发生时角色的年龄（如 14.25岁）",
+                "背景": "场景发生的背景或原因",
+                "对话": "角色间的具体对话内容，格式为：\"角色名：（动作/表情描述）对话内容。角色名：（动作/表情描述）对话内容。...\"，至少五轮。"
+            }}
 
-            **提取细粒度信息要求**：
-            请从故事片段中识别并提取以下类型的信息，并将它们分别存入对应的列表中：
-            - **对话 (dialogues)**: 识别故事中的对话，格式为 [{{"content": "对话内容", "speaker": "说话人姓名或身份"}}]。
-            - **地点 (locations)**: 识别事件发生的地点，格式为 ["地点1", "地点2"]。
-            - **时间 (times)**: 识别事件发生的时间（年份、季节、月份、具体日期、一天中的某个时段），格式为 ["时间描述1", "时间描述2"]。
-            - **动作/行为 (actions)**: 识别推动事件发展的关键非语言行为，格式为 ["行为1", "行为2"]。
-            - **参与者 (actors)**: 识别事件中出现的所有角色（包括主角、配角、路人等），格式为 ["角色1姓名", "角色2姓名"]。
-            - **情感 (emotions)**: 识别事件中的核心情感倾向，格式为 ["情感1", "情感2"]。
-            - **物品 (items)**: 识别事件中涉及的关键物品，格式为 ["物品1", "物品2"]。
-
-            记忆条目格式要求（JSON数组）：
+            **输出格式** (JSON数组):
             [
-              {{
-                "id": "唯一ID (作为事件的ID)",
-                "title": "记忆标题（10-15字，包含核心意象）",
-                "content": "记忆片段的详细描述（从故事中提取的原文或概括）",
-                "original_context": "该记忆片段在原始故事中的完整上下文段落（原文内容）", // **新增字段**
-                "time": {{
-                  "age": {chapter_start_age},  // 发生时角色的年龄 (根据章节标题确定，或从内容推断)
-                  "period": "{chapter_label}",  // 人生阶段 (根据章节标题确定)
-                  "specific": "2023年秋天的一个下午"  // 具体时间 (如果故事中提及)
+                {{
+                    "场景": "...",
+                    "参与者": ["..."],
+                    "主题": "...",
+                    "时间": "...",
+                    "背景": "...",
+                    "对话": "..."
                 }},
-                "emotion": {{
-                  "immediate": ["开心", "兴奋"],  // 即时情绪
-                  "reflected": ["满足", "怀念"],  // 事后反思情绪
-                  "residual": "对友谊的珍视感",  // 残留至今的情感
-                  "intensity": 8  // 情感强度 (1-10)
-                }},
-                "importance": {{
-                  "score": 9,  // 重要性评分 (1-10)
-                  "reason": "奠定了对友谊的理解",  // 重要性原因
-                  "frequency": "偶尔想起"  // 回忆频率
-                }},
-                "behavior_impact": {{
-                  "habit_formed": "更愿意主动关心朋友",  // 形成的习惯
-                  "attitude_change": "更加相信友情",  // 态度转变
-                  "response_pattern": "遇到朋友困难时会主动提供帮助"  // 应对模式
-                }},
-                "trigger_system": {{
-                  "sensory": ["听到那首歌"],  // 感官触发点
-                  "contextual": ["和朋友一起吃饭时"],  // 情境触发点
-                  "emotional": ["感到孤独时"]  // 情绪触发点
-                }},
-                "memory_distortion": {{
-                  "exaggerated": "朋友当时说的话比实际更温暖",  // 记忆中被夸大的部分
-                  "downplayed": "忽略了自己当时也说了不少话",  // 被淡化的部分
-                  "reason": "强化积极情感的心理需求"  // 扭曲原因
-                }},
-                "type": "scene", // 新增：记忆类型 (scene, dialogue, emotion, thought, behavior, sensation)
-                "location": "学校操场", // 新增：地点
-                "participants": ["[角色名称或拼音]"], // **重要**：必须包含所有在此记忆片段中出现的角色的**名称或拼音**（从以下列表中选择：{list(name_to_id_map.keys())}）。**注意**：请使用角色的名称或拼音，稍后系统会将其转换为ID。
-                "tags": ["友谊", "美好回忆"], // 新增：标签列表
-                "duration": "几分钟", // 新增：事件持续时间
-                "context_before": "...", // 新增：片段前的上下文
-                "context_after": "..."  // 新增：片段后的上下文
-                // --- 新增细粒度信息字段 ---
-                "dialogues": [{{"content": "对话内容", "speaker": "说话人姓名或身份"}}], // 对话列表
-                "locations": ["地点1", "地点2"], // 地点列表
-                "times": ["时间描述1", "时间描述2"], // 时间列表
-                "actions": ["行为1", "行为2"], // 动作列表
-                "actors": ["角色1姓名", "角色2姓名"], // 参与者列表
-                "emotions": ["情感1", "情感2"], // 情感列表
-                "items": ["物品1", "物品2"] // 物品列表
-                // ---
-              }},
-              // ... 更多记忆条目
+                ...
             ]
 
-            **重要**:
-            - 每个记忆条目都必须包含所有字段，即使某些字段没有明确信息也需用空字符串或默认值填充。
-            - "participants" 字段**必须**包含所有在此记忆片段中出现的角色的**名称或拼音**（从 character_data 和 related_characters 中获取）。请严格检查，确保名称或拼音存在于提供的列表中。
-            - "type", "location", "tags", "duration", "context_before", "context_after", "original_context", "dialogues", "locations", "times", "actions", "actors", "emotions", "items" 是新增的细粒度属性。
-            - 请直接返回JSON数组，不要添加其他解释文字。
-            - **特别注意**：请确保提取的 "time.age" 字段准确反映事件发生时主角色的年龄（在 {chapter_start_age}-{chapter_end_age} 范围内）。请确保 "participants" 列表包含事件中涉及的所有角色名称或拼音。"original_context" 必须是当前章节故事原文中与此记忆相关的完整段落。
+            请直接返回JSON数组，不要添加其他解释文字。
             """
 
-            user_prompt = f"""
-            以下是关于{character_data.get('name')}在{chapter_start_age}-{chapter_end_age}岁 ({chapter_label}) 的故事片段，请从中提取记忆片段。请务必阅读整个片段，识别事件，并为每个记忆提供其原始上下文。
-            {chapter_content}
-            """
+            user_prompt = f"""以下是关于{character_data.get('name')}在{chapter_start_age}-{chapter_end_age}岁 ({chapter_label}) 的故事片段，请从中提取符合上述格式的对话场景。请务必阅读整个片段，识别包含至少五轮对话的场景，并按照指定的JSON格式输出。
+
+            {chapter_content}"""
 
             try:
-                result = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
+                # **重要：修改返回格式预期**
+                # LLM 应该返回一个 JSON 数组，每个元素是一个对话场景
+                raw_result = await self.character_llm.client.generate_response(system_prompt, user_prompt)
+                print(f"=== LLM 提取对话场景原始响应 (完整) ===")
+                print(raw_result)
+                print(f"=== 响应长度: {len(raw_result)} ===")
 
-                if isinstance(result, list):
-                    raw_extracted_memories = result
-                elif isinstance(result, dict):
-                    raw_extracted_memories = result.get("memories", [])
-                else:
-                    log_warning(f"LLM 为章节 {chapter_start_age}-{chapter_end_age} 返回了非预期格式: {type(result)}")
-                    raw_extracted_memories = []
-
-                for raw_mem in raw_extracted_memories:
-                    if not isinstance(raw_mem, dict):
-                        log_warning(f"跳过非字典格式的记忆: {raw_mem}")
-                        continue
-
-                    memory_id = str(uuid.uuid4())
-                    processed_mem = raw_mem.copy()
-                    processed_mem["id"] = memory_id
-
-                    # 验证并**映射**参与者 (将名称/拼音映射为ID)
-                    participants_names = processed_mem.get("participants", [])
-                    if not isinstance(participants_names, list):
-                        participants_names = [participants_names] if participants_names else []
-
-                    mapped_participant_ids = []
-                    for name_or_pinyin in participants_names:
-                        if name_or_pinyin in name_to_id_map:
-                            mapped_id = name_to_id_map[name_or_pinyin]
-                            mapped_participant_ids.append(mapped_id)
-                            log_debug(f"[DEBUG] Mapped participant name/pinyin '{name_or_pinyin}' to ID '{mapped_id}'")
-                        else:
-                            log_warning(f"[DEBUG] Name/Pinyin '{name_or_pinyin}' from memory participants not found in name_to_id_map. Skipping.")
-
-                    processed_mem["participants"] = mapped_participant_ids
-
-                    if not processed_mem["participants"]:
-                        processed_mem["participants"] = [character_data.get("id")]
-
-                    tags = processed_mem.get("tags", [])
-                    if not isinstance(tags, list):
-                        processed_mem["tags"] = [tags] if tags else []
-
-                    # 确保 'original_context' 字段存在
-                    if 'original_context' not in processed_mem or processed_mem['original_context'] is None:
-                        processed_mem['original_context'] = processed_mem.get('content', '')
-                        log_debug(f"[DEBUG] Memory ID {memory_id} missing 'original_context', using 'content' field.")
-
-                    # 确保 'time' 字段存在，并设置默认年龄范围
-                    if 'time' not in processed_mem or not isinstance(processed_mem['time'], dict):
-                        processed_mem['time'] = {'age': chapter_start_age, 'period': chapter_label, 'specific': '未知'}
-
-                    # **修正：确保 time.age 在当前章节范围内**
-                    if not (chapter_start_age <= processed_mem['time'].get('age', chapter_start_age) <= chapter_end_age):
-                        log_warning(f"[DEBUG] Memory ID {memory_id} has age {processed_mem['time'].get('age', 'N/A')} outside chapter range {chapter_start_age}-{chapter_end_age}. Adjusting to start age {chapter_start_age}.")
-                        processed_mem['time']['age'] = chapter_start_age
-                    
-                    processed_mem["dialogues"] = raw_mem.get("dialogues", [])
-                    processed_mem["locations"] = raw_mem.get("locations", [])
-                    processed_mem["times"] = raw_mem.get("times", [])
-                    processed_mem["actions"] = raw_mem.get("actions", [])
-                    processed_mem["actors"] = raw_mem.get("actors", [])
-                    processed_mem["emotions"] = raw_mem.get("emotions", [])
-                    processed_mem["items"] = raw_mem.get("items", [])
-
-                    extracted_memories.append(processed_mem)
+                # 尝试解析整个响应为 JSON 数组
+                try:
+                    parsed_scenes = json.loads(raw_result)
+                    if isinstance(parsed_scenes, list):
+                        for scene in parsed_scenes:
+                            # 为每个场景生成一个唯一的 ID
+                            scene_id = str(uuid.uuid4())
+                            # 添加 ID 并可能调整结构以符合系统期望（如果需要作为记忆存储）
+                            processed_scene = {
+                                "id": scene_id, # 添加唯一 ID
+                                "scene": scene.get("场景"),
+                                "participants": scene.get("参与者", []),
+                                "topic": scene.get("主题"),
+                                "time_at_occurrence": scene.get("时间"),
+                                "context": scene.get("背景"),
+                                "dialogue_content": scene.get("对话"),
+                                # ... 可能需要其他字段以符合 MemoryResponse 或其他存储格式 ...
+                                "original_context": raw_result # 可选：存储原始响应片段
+                            }
+                            extracted_memories.append(processed_scene)
+                    else:
+                        log_warning(f"LLM 返回的不是 JSON 数组: {type(parsed_scenes)}")
+                        # 可以选择跳过或尝试其他处理方式
+                except json.JSONDecodeError as e:
+                    log_error(f"解析 LLM 提取的对话场景 JSON 失败: {e}")
+                    log_error(f"原始响应: {raw_result[:500]}...") # 记录前500字符以便调试
+                    # 可以选择跳过此章节或尝试从原始响应中提取
+                    # 这里我们跳过，因为格式不匹配
+                    continue
 
             except Exception as e:
-                log_error(f"从章节 {chapter_start_age}-{chapter_end_age} 提取记忆片段失败: {e}")
-                import traceback
-                traceback.print_exc()
+                log_error(f"从章节 {chapter_start_age}-{chapter_end_age}岁 提取对话场景失败: {e}")
+                traceback.print_exc() # 打印完整堆栈跟踪
+                continue # 继续处理下一个章节
 
-        log_success(f"从分章节故事中总共提取了 {len(extracted_memories)} 条记忆片段 (新模型)")
-        log_info(f"提取记忆片段耗时: {time.time() - start_time:.2f} 秒")
+        log_success(f"从分章节故事中总共提取了 {len(extracted_memories)} 个对话场景 (新格式)")
+        log_info(f"提取对话场景耗时: {time.time() - start_time:.2f} 秒")
         return extracted_memories
 
     async def extract_entities_and_relationships_from_story(self, story_text: str, character_data: Dict[str, Any], related_characters: List[Dict[str, Any]], extracted_memories: List[Dict[str, Any]], graph_store) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        log_info(f"开始从故事中提取实体和关系 (新模型)...")
+        """
+        修改：接收结构化的对话场景列表 (extracted_memories) 来提取实体和关系。
+        story_text 在新流程中可能只是 JSON 字符串，不再用于提取。
+        """
+        log_info(f"开始从结构化对话场景中提取实体和关系 (新模型)...")
         start_time = time.time()
+
+        # **修改：现在直接处理 extracted_memories (即 structured_scenes)**
+        scenes_to_process = extracted_memories # 这些已经是结构化的场景
 
         # 1. 提取实体（人物、地点、物品、事件等）
         # 人物实体已包含在 character_data 和 related_characters 中
-        # 非人物实体从故事和记忆中提取
         entities = []
-        # 从记忆中提取地点、标签作为实体
-        for memory in extracted_memories:
-            location = memory.get('location')
+        # 从场景中提取地点、物品作为实体
+        for scene in scenes_to_process:
+            location = scene.get('scene') # "场景" 字段对应地点
             if location:
                 location_entity = {
                     "app_id": str(uuid.uuid4()),
                     "name": location,
                     "type": "Place",
-                    "description": f"事件 '{memory.get('title', '')}' 发生的地点",
+                    "description": f"场景 '{scene.get('topic', '')}' 发生的地点",
                     "properties": {}
                 }
                 entities.append(location_entity)
 
-            for tag in memory.get('tags', []):
-                tag_entity = {
+            # 从对话内容中提取可能的物品（这比较复杂，可以简化或省略）
+            # dialogue_content = scene.get('dialogue_content', '')
+            # ... (可能需要 NLP 来提取物品) ...
+            # items = extract_items_from_dialogue(dialogue_content) # 假设有个函数
+            # for item_name in items:
+            #     item_entity = {"app_id": str(uuid.uuid4()), "name": item_name, "type": "Item", ...}
+            #     entities.append(item_entity)
+
+            # 主题也可以作为一个概念实体
+            topic = scene.get('topic')
+            if topic:
+                topic_entity = {
                     "app_id": str(uuid.uuid4()),
-                    "name": tag,
-                    "type": "Concept", # 或者根据tag内容判断更具体的类型
-                    "description": f"与事件 '{memory.get('title', '')}' 相关的标签",
+                    "name": topic,
+                    "type": "Concept",
+                    "description": f"场景 '{scene.get('scene', '')}' 的主题",
                     "properties": {}
                 }
-                entities.append(tag_entity)
+                entities.append(topic_entity)
 
-        # 2. 提取关系
-        # 关系主要指非人物实体与事件的关系
+        # 2. 提取关系（主要是角色-事件、事件-地点、事件-主题等）
         relationships = []
-        # (这部分在graph_store中通过CSV处理)
+        # 这部分逻辑需要根据 GraphStore 的 CSV 导入结构进行调整
+        # 例如，为每个场景创建一个 Event 节点，并建立相关关系
+        # (这部分逻辑在 graph_store.save_entities_and_relationships_to_csv 中处理)
 
         # 3. 推断角色间关系
-        character_to_character_relationships = await self.infer_character_relationships(character_data, related_characters, graph_store) # 调用推断方法
-        log_success(f"推断出 {len(character_to_character_relationships)} 条角色间关系")
+        character_to_character_relationships = await self.infer_character_relationships(character_data, related_characters, graph_store)
 
-        extraction_filename = f"generated_stories/{character_data.get('id', 'unknown')}_extracted_entities_and_relationships_new_model.txt"
-        with open(extraction_filename, "w", encoding="utf-8") as f:
-            f.write(json.dumps({"entities": entities, "relationships": relationships, "character_to_character_relationships": character_to_character_relationships}, ensure_ascii=False, indent=2))
-        log_success(f"从故事中提取的实体、关系和角色间关系已保存到 {extraction_filename}")
-
-
-        if graph_store:
-            log_info(f"开始将数据保存为新模型的CSV并导入到 Neo4j...")
-            csv_files_info = graph_store.save_entities_and_relationships_to_csv(
-                character_data, # 主角色
-                related_characters, # 关联角色
-                entities, # 提取的非人物实体
-                relationships, # 提取的非人物实体-事件关系
-                extracted_memories, # 提取的记忆 (作为事件)
-                character_data.get('id', 'unknown'), # 角色ID
-                character_to_character_relationships # 新增：推断的角色间关系
-            )
-
-            nodes_filename = csv_files_info.get("nodes_file")
-            impressions_filename = csv_files_info.get("impressions_file")
-            entity_event_relationships_filename = csv_files_info.get("entity_event_relationships_file")
-            temporal_chain_filename = csv_files_info.get("temporal_chain_file")
-            details_filename = csv_files_info.get("details_file")
-            char_to_char_relationships_filename = csv_files_info.get("char_to_char_relationships_file") # 新增
-
-            if nodes_filename:
-                success_nodes = graph_store.import_nodes_from_csv(nodes_filename)
-                if success_nodes:
-                    log_success(f"节点数据已成功从 CSV {nodes_filename} 导入 Neo4j。")
-                else:
-                    log_error(f"节点数据从 CSV {nodes_filename} 导入 Neo4j 失败。")
-
-            if impressions_filename:
-                success_impressions = graph_store.import_impressions_from_csv(impressions_filename)
-                if success_impressions:
-                    log_success(f"印象关系数据已成功从 CSV {impressions_filename} 导入 Neo4j。")
-                else:
-                    log_error(f"印象关系数据从 CSV {impressions_filename} 导入 Neo4j 失败。")
-
-            if entity_event_relationships_filename:
-                success_entity_event = graph_store.import_entity_event_relationships_from_csv(entity_event_relationships_filename)
-                if success_entity_event:
-                    log_success(f"实体-事件关系数据已成功从 CSV {entity_event_relationships_filename} 导入 Neo4j。")
-                else:
-                    log_error(f"实体-事件关系数据从 CSV {entity_event_relationships_filename} 导入 Neo4j 失败。")
-
-            if temporal_chain_filename:
-                success_temporal = graph_store.import_temporal_chain_from_csv(temporal_chain_filename)
-                if success_temporal:
-                    log_success(f"时间链数据已成功从 CSV {temporal_chain_filename} 导入 Neo4j。")
-                else:
-                    log_error(f"时间链数据从 CSV {temporal_chain_filename} 导入 Neo4j 失败。")
-
-            if details_filename:
-                success_details = graph_store.import_event_details_from_csv(details_filename)
-                if success_details:
-                    log_success(f"事件细节数据已成功从 CSV {details_filename} 导入 Neo4j。")
-                else:
-                    log_error(f"事件细节数据从 CSV {details_filename} 导入 Neo4j 失败。")
-
-            if char_to_char_relationships_filename:
-                success_char_to_char = graph_store.import_character_to_character_relationships_from_csv(char_to_char_relationships_filename)
-                if success_char_to_char:
-                    log_success(f"角色间关系数据已成功从 CSV {char_to_char_relationships_filename} 导入 Neo4j。")
-                else:
-                    log_error(f"角色间关系数据从 CSV {char_to_char_relationships_filename} 导入 Neo4j 失败。")
-            else:
-                log_info("没有角色间关系CSV文件需要导入。")
-
-            # --- 新增：在所有导入完成后，计算并存储向量 ---
-            log_info("开始计算并存储节点向量...")
-            graph_store.compute_and_store_vectors() # 调用新方法
-            log_info("节点向量计算和存储完成。")
-        else:
-            log_warning("GraphStore 未提供，跳过 CSV 保存和导入步骤。")
-
-        log_success(f"从故事中提取了 {len(entities)} 个非人物实体")
+        log_success(f"从结构化对话场景中提取了 {len(entities)} 个非人物实体")
         log_info(f"提取实体和关系耗时: {time.time() - start_time:.2f} 秒")
-        # 返回空列表，因为主要逻辑已移至CSV导入
+
+        # 返回空列表或根据需要返回处理后的实体和关系
+        # 主要逻辑已移至 graph_store.save_entities_and_relationships_to_csv
         return [], [], character_to_character_relationships # (entities, non_event_relationships, char_to_char_relationships)

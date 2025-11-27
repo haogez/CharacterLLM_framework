@@ -17,6 +17,7 @@
 12. 事件细节节点（物品、动作、对话）
 13. 优化节点结构，确保清晰无重复
 """
+import traceback
 
 import os
 import json
@@ -33,15 +34,64 @@ from app.core.utils.log_utils import log_error, log_success, log_warning, log_in
 
 class GraphStore:
     def __init__(self,
-                 uri: str = "bolt://neo4j-latest:7687", # 使用网络别名连接
+                 uri: str = "bolt://neo4j-latest-new:7687",
                  user: str = "neo4j",
                  password: str = "zyh123456",
-                 database: str = "neo4j"):
-        self.uri = os.environ.get("NEO4J_URI", uri)
-        self.user = os.environ.get("NEO4J_USERNAME", user)
-        self.password = os.environ.get("NEO4J_PASSWORD", password)
-        self.database = os.environ.get("NEO4J_DATABASE", database)
-        self.embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=os.environ.get("OPENAI_API_KEY")) # 确保环境变量设置
+                 database: str = "neo4j",
+                 embedding: Optional[Any] = None,
+                 index_name: str = "impressions", # 为印象节点指定索引
+                 text_node_property: str = "impression_content" # 指定用于向量化的节点属性
+                 ):
+        self.uri = uri
+        self.user = user
+        self.password = password
+        self.database = database
+        self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+        self.temp_csv_dir = "./temp_csv"
+        os.makedirs(self.temp_csv_dir, exist_ok=True)
+
+        print("- 初始化 OpenAI Embeddings -")
+        try:
+            # 新版 langchain-openai 的正确写法（base_url 需要显式写出）
+            self.embeddings = OpenAIEmbeddings(
+                model="text-embedding-3-small",
+                api_key=os.environ.get("OPENAI_API_KEY"),
+                base_url=os.environ.get("OPENAI_BASE_URL")  # 关键：新版要求显式写出 base_url
+            )
+            print("✅ OpenAI Embeddings 初始化成功。")
+        except Exception as e:
+            print(f"❌ OpenAI Embeddings 初始化失败: {e}")
+            import traceback as tb
+            tb.print_exc()
+            self.embeddings = None
+            self.neo4j_vector_impressions = None
+
+
+        # --- 初始化 Neo4jVector 实例 ---
+        # 确保 embeddings 成功初始化后才尝试初始化 Neo4jVector
+        if self.embeddings is not None:
+            try:
+                self.neo4j_vector_impressions = Neo4jVector.from_existing_index(
+                    embedding=self.embeddings, # 现在 self.embeddings 已存在且配置正确
+                    url=self.uri,
+                    username=self.user,
+                    password=self.password,
+                    database=self.database,
+                    embedding_node_property="impression_embedding", # 这个属性名需要在导入时创建
+                    index_name="impression_embeddings", # 确保索引名称正确且维度匹配
+                    # search_type="vector", # 如果要使用 hybrid，必须确保 keyword_index_name 指向的全文索引存在
+                )
+                print("✅ Neo4jVector (impressions) 初始化成功。")
+            except Exception as e:
+                print(f"❌ Neo4jVector (impressions) 初始化失败: {e}")
+                print("   这可能导致语义搜索功能不可用，但应用将继续启动。")
+                # **修正：确保 traceback 可用**
+                import traceback as tb
+                tb.print_exc() # 打印完整堆栈跟踪
+                self.neo4j_vector_impressions = None # 设置为 None，后续需要检查
+        else:
+            print("⚠️  由于 Embeddings 初始化失败，跳过 Neo4jVector 初始化。")
+            self.neo4j_vector_impressions = None
         # --- 修改：初始化 Neo4jVector 实例用于 Event 节点 ---
         # 注意：这里假设索引 "event_embeddings" (向量索引) 和 "event_keyword_index" (全文索引) 已在 Neo4j 中创建
         # self.neo4j_vector_events = Neo4jVector.from_existing_index(
@@ -84,7 +134,7 @@ class GraphStore:
         )
         print("--- Neo4jVector 实例初始化完成 ---")
         # 使用通过挂载卷共享的目录
-        self.temp_csv_dir = "/zhouyuhao/zhouyuhao_data/import"
+        self.temp_csv_dir = "/zhouyuhao/zhouyuhao_data_new/import"
         os.makedirs(self.temp_csv_dir, exist_ok=True)
 
         AUTH = (self.user, self.password)
@@ -775,24 +825,44 @@ class GraphStore:
                 print(f"更新印象 {impression_app_id} 失败: {e}")
                 return False
 
-    def save_entities_and_relationships_to_csv(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], entities: List[Dict[str, Any]], relationships: List[Dict[str, Any]], memories: List[Dict[str, Any]], character_id: str, character_to_character_relationships: List[Dict[str, Any]] = None) -> Dict[str, str]:
+    def save_entities_and_relationships_to_csv(self,
+                                            main_character: Dict[str, Any], # 主角色
+                                            related_characters: List[Dict[str, Any]], # 关联角色，包含 relationship_to_protagonist
+                                            entities: List[Dict[str, Any]], # 额外实体（可选，可能从其他地方提取）
+                                            relationships: List[Dict[str, Any]], # 额外关系（可选，可能从其他地方提取）
+                                            memories: List[Dict[str, Any]], # **关键修改：现在是结构化的对话场景列表**
+                                            character_id: str, # 主角色 ID
+                                            character_to_character_relationships: List[Dict[str, Any]] = None # 可选的推断角色间关系
+                                            ) -> Dict[str, str]:
         """
-        将所有数据（主角色、关联角色、实体、关系、记忆）保存为统一格式的 CSV 文件。
-        包含从记忆中提取的细粒度信息（地点、时间、动作、参与者、情感、物品）作为独立节点。
+        将角色、结构化对话场景（作为事件）、细粒度细节（从场景中直接获取）、
+        额外实体/关系、角色间关系等数据保存为多个符合 Neo4j LOAD CSV 格式的 CSV 文件。
+        **关键修改：直接使用 memories 中的字段，不再进行文本提取。**
         """
-        print(f"--- 开始将数据保存为统一格式的 CSV (新模型, 修复类型和引号 - 使用Base64) ---",flush=True)
-        nodes_filename = os.path.join(self.temp_csv_dir, f"story_nodes_{character_id}.csv")
-        relationships_filename = os.path.join(self.temp_csv_dir, f"story_relationships_{character_id}.csv") # 非人物实体-事件关系 (旧逻辑)
-        impressions_filename = os.path.join(self.temp_csv_dir, f"story_impressions_{character_id}.csv")
-        temporal_chain_filename = os.path.join(self.temp_csv_dir, f"temporal_chain_{character_id}.csv")
-        details_filename = os.path.join(self.temp_csv_dir, f"event_details_{character_id}.csv")
-        # --- 新增：角色间关系 CSV 文件名 ---
-        char_to_char_relationships_filename = os.path.join(self.temp_csv_dir, f"character_to_character_relationships_{character_id}.csv")
-        # ---
+        print(f"- 开始将数据保存为统一格式的 CSV (新模型, 直接使用对话场景) -", flush=True)
 
-        # --- 修改：收集所有需要创建节点的实体 ---
+        # --- 定义 CSV 文件路径 ---
+        nodes_filename = os.path.join(self.temp_csv_dir, f"story_nodes_{character_id}.csv")
+        # impressions_filename = os.path.join(self.temp_csv_dir, f"story_impressions_{character_id}.csv") # 如果需要单独的印象节点
+        relationships_filename = os.path.join(self.temp_csv_dir, f"story_entity_event_relationships_{character_id}.csv") # 非人物实体-事件关系 (可选)
+        temporal_chain_filename = os.path.join(self.temp_csv_dir, f"temporal_chain_{character_id}.csv")
+        details_filename = os.path.join(self.temp_csv_dir, f"event_details_{character_id}.csv") # 事件细节 (可选)
+        # 新增：角色间关系 CSV 文件名 (用于主角 -> 关联角色)
+        char_to_char_relationships_filename = os.path.join(self.temp_csv_dir, f"character_to_character_relationships_{character_id}.csv")
+        # 新增：细粒度节点 CSV 文件名 (直接从 memories 获取)
+        places_filename = os.path.join(self.temp_csv_dir, f"places_{character_id}.csv")
+        times_filename = os.path.join(self.temp_csv_dir, f"times_{character_id}.csv")
+        actions_filename = os.path.join(self.temp_csv_dir, f"actions_{character_id}.csv")
+        actors_filename = os.path.join(self.temp_csv_dir, f"actors_{character_id}.csv")
+        emotions_filename = os.path.join(self.temp_csv_dir, f"emotions_{character_id}.csv")
+        items_filename = os.path.join(self.temp_csv_dir, f"items_{character_id}.csv")
+        # 新增：事件-细粒度节点关系 CSV
+        event_to_detail_relationships_csv_filename = os.path.join(self.temp_csv_dir, f"event_to_details_{character_id}.csv")
+
+        # --- 收集所有需要创建节点的数据 ---
         all_nodes_to_create = []
-        # 1. 添加主角色和关联角色
+
+        # 1. 添加主角色和关联角色 (Character 节点)
         all_character_ids = set()
         all_character_ids.add(main_character.get('id'))
         for rc in related_characters:
@@ -802,7 +872,6 @@ class GraphStore:
         character_map[main_character.get('id')] = main_character
         for rc in related_characters:
             character_map[rc.get('id')] = rc
-        # ---
 
         # --- 保存节点 CSV (Character, Event, 其他实体) ---
         with open(nodes_filename, 'w', newline='', encoding='utf-8') as csvfile:
@@ -812,11 +881,12 @@ class GraphStore:
                 'education', 'social_pattern', 'favorite_thing', 'usual_place', 'past_experience',
                 'speech_style', 'openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism',
                 'is_protagonist', 'entity_type', 'description', 'event_title', 'event_content', 'event_age', 'event_importance', 'properties',
-                # --- 修改：添加 'type' 字段 ---
-                'type'
-                # ---
+                'type', # 添加 'type' 字段
+                # **修改：添加 'relationship_to_protagonist' 字段到节点 CSV (可选，用于调试或更复杂的节点属性)**
+                'relationship_to_protagonist'
             ]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            # **关键修改：添加 quoting=csv.QUOTE_ALL**
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
 
             # 1. 写入所有角色节点 (去重后)
@@ -824,56 +894,67 @@ class GraphStore:
                 char_data = character_map.get(char_id)
                 if not char_data:
                     continue
-                char_node_id = str(uuid.uuid4())
-                char_props = {
-                    'node_id': char_node_id,
-                    'label': 'Character',
-                    'name': char_data.get('name', ''),
-                    'app_id': char_data.get('id', ''),
-                    'age': char_data.get('age', ''),
-                    'gender': char_data.get('gender', ''),
-                    'occupation': char_data.get('occupation', ''),
-                    'hobby': char_data.get('hobby', ''),
-                    'skill': char_data.get('skill', ''),
-                    'values': char_data.get('values', ''),
-                    'living_habit': char_data.get('living_habit', ''),
-                    'dislike': char_data.get('dislike', ''),
-                    'language_style': char_data.get('language_style', ''),
-                    'appearance': char_data.get('appearance', ''),
-                    'family_status': char_data.get('family_status', ''),
-                    'education': char_data.get('education', ''),
-                    'social_pattern': char_data.get('social_pattern', ''),
-                    'favorite_thing': char_data.get('favorite_thing', ''),
-                    'usual_place': char_data.get('usual_place', ''),
-                    'past_experience': char_data.get('past_experience', ''),
-                    'speech_style': char_data.get('speech_style', ''),
-                    'openness': char_data.get('personality', {}).get('openness', ''),
-                    'conscientiousness': char_data.get('personality', {}).get('conscientiousness', ''),
-                    'extraversion': char_data.get('personality', {}).get('extraversion', ''),
-                    'agreeableness': char_data.get('personality', {}).get('agreeableness', ''),
-                    'neuroticism': char_data.get('personality', {}).get('neuroticism', ''),
-                    'is_protagonist': 'True' if char_id == main_character.get('id') else 'False',
-                    'entity_type': 'Character',
-                    'description': char_data.get('background', '')
-                }
-                props_to_exclude = set(fieldnames) - {'node_id', 'label', 'name', 'app_id', 'age', 'gender', 'occupation', 'hobby', 'skill', 'values', 'living_habit', 'dislike', 'language_style', 'appearance', 'family_status', 'education', 'social_pattern', 'favorite_thing', 'usual_place', 'past_experience', 'speech_style', 'openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism', 'is_protagonist', 'entity_type', 'description', 'event_title', 'event_content', 'event_age', 'event_importance', 'properties'}
-                dynamic_props = {k: v for k, v in char_data.items() if k not in props_to_exclude and k not in char_props}
-                for k, v in dynamic_props.items():
-                    if isinstance(v, (dict, list)):
-                        dynamic_props[k] = json.dumps(v, ensure_ascii=False)
-                json_str = json.dumps(dynamic_props, ensure_ascii=False)
-                char_props['properties'] = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
-                writer.writerow(char_props)
-                # **添加到 all_nodes_to_create**
-                all_nodes_to_create.append(char_props)
 
-            # 2. 写入事件节点 (从记忆中提取)
-            event_node_map = {}
-            for memory in memories:
-                event_node_id = str(uuid.uuid4())
-                event_node_map[memory.get('id')] = event_node_id
-                # **修改：使用 original_context 作为事件节点的原始内容**
-                original_content_for_event = memory.get('original_context', memory.get('content', ''))
+                # **重要：对包含复杂结构的字段进行预处理，使用 Base64 编码**
+                # 例如 personality 字段
+                personality_dict = char_data.get("personality", {})
+                # 确保 personality 是一个字典
+                if not isinstance(personality_dict, dict):
+                    personality_dict = {}
+                json_str_personality = json.dumps(personality_dict, ensure_ascii=False)
+                personality_base64 = base64.b64encode(json_str_personality.encode('utf-8')).decode('utf-8')
+
+                node_props = {
+                    "node_id": char_data.get("id"),
+                    "label": "Character",
+                    "name": char_data.get("name", ""),
+                    "app_id": char_data.get("id"),
+                    "age": char_data.get("age"),
+                    "gender": char_data.get("gender", ""),
+                    "occupation": char_data.get("occupation", ""),
+                    "hobby": char_data.get("hobby", ""),
+                    "skill": char_data.get("skill", ""),
+                    "values": char_data.get("values", ""),
+                    "living_habit": char_data.get("living_habit", ""),
+                    "dislike": char_data.get("dislike", ""),
+                    "language_style": char_data.get("language_style", ""),
+                    "appearance": char_data.get("appearance", ""),
+                    "family_status": char_data.get("family_status", ""),
+                    "education": char_data.get("education", ""),
+                    "social_pattern": char_data.get("social_pattern", ""),
+                    "favorite_thing": char_data.get("favorite_thing", ""),
+                    "usual_place": char_data.get("usual_place", ""),
+                    "past_experience": char_data.get("past_experience", ""),
+                    "speech_style": char_data.get("speech_style", ""),
+                    "openness": personality_dict.get("openness", 50),
+                    "conscientiousness": personality_dict.get("conscientiousness", 50),
+                    "extraversion": personality_dict.get("extraversion", 50),
+                    "agreeableness": personality_dict.get("agreeableness", 50),
+                    "neuroticism": personality_dict.get("neuroticism", 50),
+                    "is_protagonist": True if char_id == character_id else False,
+                    "entity_type": "Character",
+                    "description": char_data.get("background", ""), # 或者其他描述字段
+                    # **修改：为 Character 节点设置 event 相关字段为空**
+                    "event_title": "",
+                    "event_content": "",
+                    "event_age": "",
+                    "event_importance": "",
+                    # **修改：使用 Base64 编码的 properties**
+                    "properties": personality_base64, # 将 personality 作为 properties 存储
+                    "type": "Character", # 添加 type 字段
+                    # **修改：添加 'relationship_to_protagonist' 字段**
+                    "relationship_to_protagonist": char_data.get("relationship_to_protagonist", "未知")
+                }
+                writer.writerow(node_props)
+
+            # 2. 写入所有记忆作为 Event 节点 (来自结构化对话场景)
+            for memory in memories: # **关键修改：直接遍历结构化对话场景**
+                event_node_id = memory.get('id') or str(uuid.uuid4()) # 使用 memory 的 id 作为 Event 节点的 id
+                # **修改：使用 memory 中的特定字段作为事件节点的原始内容**
+                # 假设 memory 包含 'dialogue_content', 'context', 'title' 等
+                original_content_for_event = memory.get('dialogue_content', memory.get('content', memory.get('original_context', '')))
+                event_age = memory.get('time_at_occurrence', memory.get('time', {}).get('age', '')) # **关键修改：使用新字段**
+
                 event_props = {
                     'node_id': event_node_id,
                     'label': 'Event',
@@ -881,304 +962,182 @@ class GraphStore:
                     'app_id': memory.get('id', ''),
                     'entity_type': 'Event',
                     'event_title': memory.get('title', ''),
-                    'event_content': original_content_for_event, # **使用 original_context**
-                    'event_age': memory.get('time', {}).get('age', ''),
-                    'event_importance': memory.get('importance', {}).get('score', ''),
-                    'description': original_content_for_event[:100] # **使用 original_context**
+                    'event_content': original_content_for_event,
+                    'event_age': event_age,
+                    'event_importance': memory.get('importance', {}).get('score', ''), # 假设 importance 存在于 memory 中
+                    'description': original_content_for_event[:100], # **使用 original_content**
+                    # **重要：处理可能包含复杂结构的字段，如 emotion, importance 等**
+                    # 将它们作为 JSON 字符串，然后进行 Base64 编码
+                    'properties': base64.b64encode(json.dumps({
+                        'time': memory.get('time', {}),
+                        'emotion': memory.get('emotion', {}), # 假设 emotion 存在于 memory 中
+                        'importance': memory.get('importance', {}),
+                        'behavior_impact': memory.get('behavior_impact', {}), # 假设 behavior_impact 存在于 memory 中
+                        'trigger_system': memory.get('trigger_system', {}), # 假设 trigger_system 存在于 memory 中
+                        'memory_distortion': memory.get('memory_distortion', {}), # 假设 memory_distortion 存在于 memory 中
+                        # ... 可以添加其他需要的字段 ...
+                    }, ensure_ascii=False).encode('utf-8')).decode('utf-8'),
+                    'type': 'Event' # 添加 type 字段
                 }
-                dynamic_props_mem = {k: v for k, v in memory.items() if k not in ['title', 'content', 'original_context', 'time', 'importance', 'id', 'app_id', 'node_id', 'label', 'name', 'entity_type', 'event_title', 'event_content', 'event_age', 'event_importance', 'description', 'properties']}
-                for k, v in dynamic_props_mem.items():
-                    if isinstance(v, (dict, list)):
-                        dynamic_props_mem[k] = json.dumps(v, ensure_ascii=False)
-                json_str_mem = json.dumps(dynamic_props_mem, ensure_ascii=False)
-                event_props['properties'] = base64.b64encode(json_str_mem.encode('utf-8')).decode('utf-8')
                 writer.writerow(event_props)
-                # **添加到 all_nodes_to_create**
-                all_nodes_to_create.append(event_props)
 
-            # 3. 写入非人物实体节点 (从参数 entities 提取)
+            # 3. 写入非人物实体节点 (从参数 entities 提取 - 可选)
             entity_node_map = {}
-            for entity in entities:
-                ent_node_id = str(uuid.uuid4())
+            for entity in entities: # **关键修改：只处理传入的 entities**
+                ent_node_id = entity.get('app_id') or str(uuid.uuid4())
                 entity_node_map[entity.get('app_id')] = ent_node_id
                 ent_props = {
                     'node_id': ent_node_id,
-                    'label': entity.get('type', 'Entity').capitalize(),
+                    'label': entity.get('type', 'Entity').capitalize(), # 例如 'Place', 'Concept'
                     'name': entity.get('name', ''),
                     'app_id': entity.get('app_id', ''),
                     'entity_type': entity.get('type', 'Entity').upper(),
-                    'description': entity.get('description', '')
+                    'description': entity.get('description', ''),
+                    'properties': base64.b64encode(json.dumps(entity.get('properties', {}), ensure_ascii=False).encode('utf-8')).decode('utf-8'),
+                    'type': entity.get('type', 'Entity').upper() # 添加 type 字段
                 }
-                dynamic_props_ent = entity.get('properties', {})
-                for k, v in dynamic_props_ent.items():
-                    if isinstance(v, (dict, list)):
-                        dynamic_props_ent[k] = json.dumps(v, ensure_ascii=False)
-                json_str_ent = json.dumps(dynamic_props_ent, ensure_ascii=False)
-                ent_props['properties'] = base64.b64encode(json_str_ent.encode('utf-8')).decode('utf-8')
                 writer.writerow(ent_props)
-                # **添加到 all_nodes_to_create**
-                all_nodes_to_create.append(ent_props)
 
-            # 4. 写入从记忆中提取的细节节点 (NEW)
-            # 创建一个映射，将细节内容映射到唯一的 app_id
-            detail_to_app_id_map = {}
-            for memory in memories:
-                event_app_id = memory.get('id')
-                if not event_app_id:
-                    continue
+        print(f"- 节点 CSV 文件已保存至: {nodes_filename} -")
 
-                # --- Locations ---
-                for loc_name in memory.get('locations', []):
-                    if not loc_name:
-                        continue
-                    # 使用哈希值作为唯一ID，避免重复
-                    detail_app_id = f"place_{abs(hash(loc_name))}" # 使用 abs(hash(...)) 确保非负
-                    if detail_app_id not in detail_to_app_id_map:
-                        detail_to_app_id_map[detail_app_id] = loc_name
-                        node_props = {
-                            'node_id': str(uuid.uuid4()),
-                            'label': 'Place',
-                            'app_id': detail_app_id,
-                            'name': loc_name,
-                            'type': 'Place' # 可选
-                        }
-                        # Properties can be added if needed
-                        json_str_detail = json.dumps({}, ensure_ascii=False) # Empty for now, add specific properties if needed
-                        node_props['properties'] = base64.b64encode(json_str_detail.encode('utf-8')).decode('utf-8')
-                        writer.writerow(node_props)
-                        all_nodes_to_create.append(node_props)
+        # --- 新增：保存细粒度节点 CSV (Places, Times, Actions, Actors, Emotions, Items) ---
+        # **关键修改：直接从 memories 列表中提取这些信息**
+        # 集合用于去重
+        all_places = set()
+        all_times = set()
+        all_actions = set()
+        all_actors = set()
+        all_emotions = set()
+        all_items = set()
 
-                # --- Times ---
-                for time_desc in memory.get('times', []):
-                    if not time_desc:
-                        continue
-                    detail_app_id = f"time_{abs(hash(time_desc))}"
-                    if detail_app_id not in detail_to_app_id_map:
-                        detail_to_app_id_map[detail_app_id] = time_desc
-                        node_props = {
-                            'node_id': str(uuid.uuid4()),
-                            'label': 'Time',
-                            'app_id': detail_app_id,
-                            'description': time_desc,
-                            'type': 'Time'
-                        }
-                        json_str_detail = json.dumps({}, ensure_ascii=False)
-                        node_props['properties'] = base64.b64encode(json_str_detail.encode('utf-8')).decode('utf-8')
-                        writer.writerow(node_props)
-                        all_nodes_to_create.append(node_props)
+        for memory in memories:
+            all_places.update(memory.get('locations', [])) # **关键修改：直接获取**
+            all_times.update(memory.get('times', [])) # **关键修改：直接获取**
+            all_actions.update(memory.get('actions', [])) # **关键修改：直接获取**
+            all_actors.update(memory.get('actors', [])) # **关键修改：直接获取**
+            all_emotions.update(memory.get('emotions', [])) # **关键修改：直接获取**
+            all_items.update(memory.get('items', [])) # **关键修改：直接获取**
 
-                # --- Actions ---
-                for action_desc in memory.get('actions', []):
-                    if not action_desc:
-                        continue
-                    detail_app_id = f"action_{abs(hash(action_desc))}"
-                    if detail_app_id not in detail_to_app_id_map:
-                        detail_to_app_id_map[detail_app_id] = action_desc
-                        node_props = {
-                            'node_id': str(uuid.uuid4()),
-                            'label': 'Action',
-                            'app_id': detail_app_id,
-                            'description': action_desc,
-                            'type': 'Action'
-                        }
-                        json_str_detail = json.dumps({}, ensure_ascii=False)
-                        node_props['properties'] = base64.b64encode(json_str_detail.encode('utf-8')).decode('utf-8')
-                        writer.writerow(node_props)
-                        all_nodes_to_create.append(node_props)
-
-                # --- Actors (Non-Character Participants) ---
-                # Note: Actors might overlap with Characters. We'll handle Character actors separately via C->I->E.
-                # For non-character actors, we could create Actor nodes here if needed.
-                # For now, we'll assume 'participants' in the main loop refers to Character IDs.
-                # If 'actors' from memory are different, create them similarly to Places/Times/Actions.
-                # Example:
-                # for actor_name in memory.get('actors', []):
-                #     if not actor_name or actor_name in all_character_ids: # Skip if it's a known character
-                #         continue
-                #     detail_app_id = f"actor_{abs(hash(actor_name))}"
-                #     if detail_app_id not in detail_to_app_id_map:
-                #         detail_to_app_id_map[detail_app_id] = actor_name
-                #         node_props = {
-                #             'node_id': str(uuid.uuid4()),
-                #             'label': 'Actor',
-                #             'app_id': detail_app_id,
-                #             'name': actor_name,
-                #             'type': 'Actor'
-                #         }
-                #         json_str_detail = json.dumps({}, ensure_ascii=False)
-                #         node_props['properties'] = base64.b64encode(json_str_detail.encode('utf-8')).decode('utf-8')
-                #         writer.writerow(node_props)
-                #         all_nodes_to_create.append(node_props)
-
-                # --- Emotions ---
-                for emotion_desc in memory.get('emotions', []):
-                    if not emotion_desc:
-                        continue
-                    detail_app_id = f"emotion_{abs(hash(emotion_desc))}"
-                    if detail_app_id not in detail_to_app_id_map:
-                        detail_to_app_id_map[detail_app_id] = emotion_desc
-                        node_props = {
-                            'node_id': str(uuid.uuid4()),
-                            'label': 'Emotion',
-                            'app_id': detail_app_id,
-                            'description': emotion_desc,
-                            'type': 'Emotion'
-                        }
-                        json_str_detail = json.dumps({}, ensure_ascii=False)
-                        node_props['properties'] = base64.b64encode(json_str_detail.encode('utf-8')).decode('utf-8')
-                        writer.writerow(node_props)
-                        all_nodes_to_create.append(node_props)
-
-                # --- Items ---
-                for item_name in memory.get('items', []):
-                    if not item_name:
-                        continue
-                    detail_app_id = f"item_{abs(hash(item_name))}"
-                    if detail_app_id not in detail_to_app_id_map:
-                        detail_to_app_id_map[detail_app_id] = item_name
-                        node_props = {
-                            'node_id': str(uuid.uuid4()),
-                            'label': 'Item',
-                            'app_id': detail_app_id,
-                            'name': item_name,
-                            'type': 'Item'
-                        }
-                        json_str_detail = json.dumps({}, ensure_ascii=False)
-                        node_props['properties'] = base64.b64encode(json_str_detail.encode('utf-8')).decode('utf-8')
-                        writer.writerow(node_props)
-                        all_nodes_to_create.append(node_props)
-
-        print(f"--- 节点 CSV 文件已保存至: {nodes_filename} ---")
-
-
-        # --- 保存印象关系 CSV (Character -> Impression -> Event) ---
-        with open(impressions_filename, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['impression_id', 'character_app_id', 'event_app_id', 'impression_content', 'strength', 'timestamp', 'remembered_details_json', 'properties'] # **添加 remembered_details_json 字段**
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        # 写入 Places
+        with open(places_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['app_id', 'name', 'type', 'description', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
-            for memory in memories:
-                event_app_id = memory.get('id')
-                if not event_app_id:
-                    continue
+            for place_name in all_places:
+                if not place_name: continue
+                place_app_id = f"place_{abs(hash(place_name))}"
+                writer.writerow({
+                    'app_id': place_app_id,
+                    'name': place_name,
+                    'type': 'Place',
+                    'description': f'A place mentioned in a memory: {place_name}',
+                    'properties': base64.b64encode(json.dumps({}, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                })
+        print(f"- 地点节点 CSV 文件已保存至: {places_filename} -")
 
-                participants = memory.get('participants', [])
-                original_content = memory.get('content', '') # 获取原始事件内容
-                timestamp = memory.get('time', {}).get('specific', datetime.now().isoformat())
+        # 写入 Times
+        with open(times_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['app_id', 'name', 'type', 'description', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
+            writer.writeheader()
+            for time_desc in all_times:
+                if not time_desc: continue
+                time_app_id = f"time_{abs(hash(time_desc))}"
+                writer.writerow({
+                    'app_id': time_app_id,
+                    'name': time_desc,
+                    'type': 'Time',
+                    'description': f'A time mentioned in a memory: {time_desc}',
+                    'properties': base64.b64encode(json.dumps({}, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                })
+        print(f"- 时间节点 CSV 文件已保存至: {times_filename} -")
 
-                # **修改：为每个参与者生成一个印象**
-                for participant_id in participants:
-                    char_app_id = participant_id
-                    if not char_app_id:
-                        continue
-                    # 获取角色数据
-                    char_data = character_map.get(char_app_id, {})
+        # 写入 Actions
+        with open(actions_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['app_id', 'name', 'type', 'description', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
+            writer.writeheader()
+            for action_desc in all_actions:
+                if not action_desc: continue
+                action_app_id = f"action_{abs(hash(action_desc))}"
+                writer.writerow({
+                    'app_id': action_app_id,
+                    'name': action_desc,
+                    'type': 'Action',
+                    'description': f'An action mentioned in a memory: {action_desc}',
+                    'properties': base64.b64encode(json.dumps({}, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                })
+        print(f"- 动作节点 CSV 文件已保存至: {actions_filename} -")
 
-                    # **调用新方法处理印象内容和细节**
-                    processed_impression_content, remembered_details_for_char = self._process_impression_content_with_details(original_content, char_data, memory)
+        # 写入 Actors
+        with open(actors_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['app_id', 'name', 'type', 'description', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
+            writer.writeheader()
+            for actor_name in all_actors:
+                if not actor_name: continue
+                # 注意：actors 可能包含角色的 app_id 或姓名
+                # 如果 actor_name 是一个已知的角色 ID，则应连接到 Character 节点
+                # 否则，可以将其视为一个 Actor 节点
+                # 这里假设 actor_name 是一个名称，我们创建一个 Actor 节点
+                actor_app_id = f"actor_{abs(hash(actor_name))}"
+                writer.writerow({
+                    'app_id': actor_app_id,
+                    'name': actor_name,
+                    'type': 'Actor',
+                    'description': f'An actor mentioned in a memory: {actor_name}',
+                    'properties': base64.b64encode(json.dumps({}, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                })
+        print(f"- 参与者节点 CSV 文件已保存至: {actors_filename} -")
 
-                    # 计算强度
-                    calculated_strength = self.calculate_impression_strength(char_data, memory)
+        # 写入 Emotions
+        with open(emotions_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['app_id', 'name', 'type', 'description', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
+            writer.writeheader()
+            for emotion_desc in all_emotions:
+                if not emotion_desc: continue
+                emotion_app_id = f"emotion_{abs(hash(emotion_desc))}"
+                writer.writerow({
+                    'app_id': emotion_app_id,
+                    'name': emotion_desc,
+                    'type': 'Emotion',
+                    'description': f'An emotion mentioned in a memory: {emotion_desc}',
+                    'properties': base64.b64encode(json.dumps({}, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                })
+        print(f"- 情感节点 CSV 文件已保存至: {emotions_filename} -")
 
-                    impression_id = str(uuid.uuid4())
-                    impression_props = {
-                        'impression_id': impression_id,
-                        'character_app_id': char_app_id,
-                        'event_app_id': event_app_id,
-                        'impression_content': processed_impression_content, # **使用处理后的内容**
-                        'strength': calculated_strength,
-                        'timestamp': timestamp,
-                        # **添加 remembered_details_json 到 properties**
-                        'remembered_details_json': json.dumps(remembered_details_for_char, ensure_ascii=False) # 这将在写入前被 Base64 编码
-                    }
-                    dynamic_props_imp = {k: v for k, v in memory.items() if k not in ['id', 'participants', 'content', 'time', 'importance', 'impression_id', 'character_app_id', 'event_app_id', 'impression_content', 'strength', 'timestamp', 'properties', 'remembered_details_json']}
-                    for k, v in dynamic_props_imp.items():
-                        if isinstance(v, (dict, list)):
-                            dynamic_props_imp[k] = json.dumps(v, ensure_ascii=False)
-                    json_str_imp = json.dumps(dynamic_props_imp, ensure_ascii=False)
-                    impression_props['properties'] = base64.b64encode(json_str_imp.encode('utf-8')).decode('utf-8')
-                    writer.writerow(impression_props)
-
-        print(f"--- 印象关系 CSV 文件已保存至: {impressions_filename} ---")
+        # 写入 Items
+        with open(items_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['app_id', 'name', 'type', 'description', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
+            writer.writeheader()
+            for item_name in all_items:
+                if not item_name: continue
+                item_app_id = f"item_{abs(hash(item_name))}"
+                writer.writerow({
+                    'app_id': item_app_id,
+                    'name': item_name,
+                    'type': 'Item',
+                    'description': f'An item mentioned in a memory: {item_name}',
+                    'properties': base64.b64encode(json.dumps({}, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                })
+        print(f"- 物品节点 CSV 文件已保存至: {items_filename} -")
 
 
-        # --- 保存非人物实体到事件的关系 CSV (旧逻辑 - 用于 Concept 等) ---
+        # --- 保存非人物实体到事件的关系 CSV (可选 - 处理传入的 relationships) ---
+        # **关键修改：只处理传入的 relationships 列表**
         with open(relationships_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['relation_id', 'entity_app_id', 'event_app_id', 'relationship_type', 'properties']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
-            for memory in memories:
-                event_app_id = memory.get('id')
-                if not event_app_id:
-                    continue
-                mem_location = memory.get('location')
-                if mem_location:
-                    location_entity_app_id = None
-                    for ent in entities:
-                        if ent.get('name') == mem_location:
-                            location_entity_app_id = ent.get('app_id')
-                            break
-                    if location_entity_app_id:
-                        rel_id = str(uuid.uuid4())
-                        rel_props = {
-                            'relation_id': rel_id,
-                            'entity_app_id': location_entity_app_id,
-                            'event_app_id': event_app_id,
-                            'relationship_type': 'HAPPENED_AT',
-                        }
-                        json_str_rel = json.dumps({}, ensure_ascii=False)
-                        rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
-                        writer.writerow(rel_props)
-                for tag in memory.get('tags', []):
-                    tag_entity_app_id = None
-                    for ent in entities:
-                        if ent.get('name') == tag:
-                            tag_entity_app_id = ent.get('app_id')
-                            break
-                    if tag_entity_app_id:
-                        rel_id = str(uuid.uuid4())
-                        rel_props = {
-                            'relation_id': rel_id,
-                            'entity_app_id': tag_entity_app_id,
-                            'event_app_id': event_app_id,
-                            'relationship_type': 'TAGGED_AS',
-                        }
-                        json_str_rel = json.dumps({}, ensure_ascii=False)
-                        rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
-                        writer.writerow(rel_props)
-        print(f"--- 实体-事件关系 CSV 文件已保存至: {relationships_filename} ---")
-
-
-        # --- 保存事件细节 CSV (旧逻辑 - 用于 dialogues, objects 等) ---
-        with open(details_filename, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['detail_id', 'event_app_id', 'type', 'content', 'properties']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for memory in memories:
-                event_app_id = memory.get('id')
-                if not event_app_id:
-                    continue
-                # 提取事件细节（假设在memory的details字段中）
-                details = memory.get('details', [])
-                for detail in details:
-                    detail_id = str(uuid.uuid4())
-                    detail_props = {
-                        'detail_id': detail_id,
-                        'event_app_id': event_app_id,
-                        'type': detail.get('type', 'DETAIL'),
-                        'content': detail.get('content', '')
-                    }
-                    dynamic_props = {k: v for k, v in detail.items() if k not in ['type', 'content', 'detail_id', 'event_app_id', 'properties']}
-                    for k, v in dynamic_props.items():
-                        if isinstance(v, (dict, list)):
-                            dynamic_props[k] = json.dumps(v, ensure_ascii=False)
-                    json_str = json.dumps(dynamic_props, ensure_ascii=False)
-                    detail_props['properties'] = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
-                    writer.writerow(detail_props)
-        print(f"--- 事件细节 CSV 文件已保存至: {details_filename} ---")
+            for rel in relationships: # **关键修改：直接遍历传入的关系**
+                writer.writerow(rel)
+        print(f"- 非人物实体-事件关系 CSV 文件已保存至: {relationships_filename} -")
 
 
         # --- 保存 Event 衍生节点到事件的关系 CSV (NEW) ---
-        event_to_detail_relationships_csv_filename = os.path.join(self.temp_csv_dir, f"event_to_details_{character_id}.csv")
+        # **关键修改：直接使用 memories 中的字段建立关系**
         # 准备存储关系的列表
         all_event_to_detail_relationships = []
 
@@ -1188,151 +1147,211 @@ class GraphStore:
             if not event_app_id:
                 continue
 
-            # 从 memory 中提取细粒度信息
-            # --- 提取并处理地点 ---
-            for loc_name in memory.get('locations', []):
-                 if not loc_name:
-                     continue
-                 place_app_id = f"place_{abs(hash(loc_name))}"
-                 all_event_to_detail_relationships.append({
-                     'event_app_id': event_app_id,
-                     'detail_app_id': place_app_id,
-                     'relationship_type': 'OCCURRED_AT' # 或 'LOCATION'
-                 })
+            # 从 memory 中直接提取细粒度信息并建立关系
+            # - 提取并处理地点 -
+            for loc_name in memory.get('locations', []): # **关键修改：直接获取**
+                if not loc_name: continue
+                place_app_id = f"place_{abs(hash(loc_name))}"
+                all_event_to_detail_relationships.append({
+                    'event_app_id': event_app_id,
+                    'detail_app_id': place_app_id,
+                    'relationship_type': 'OCCURRED_AT' # 或 'LOCATION'
+                })
 
-            # --- 提取并处理时间 ---
-            for time_desc in memory.get('times', []):
-                 if not time_desc:
-                     continue
-                 time_app_id = f"time_{abs(hash(time_desc))}"
-                 all_event_to_detail_relationships.append({
-                     'event_app_id': event_app_id,
-                     'detail_app_id': time_app_id,
-                     'relationship_type': 'AT_TIME' # 或 'TIME'
-                 })
+            # - 提取并处理时间 -
+            for time_desc in memory.get('times', []): # **关键修改：直接获取**
+                if not time_desc: continue
+                time_app_id = f"time_{abs(hash(time_desc))}"
+                all_event_to_detail_relationships.append({
+                    'event_app_id': event_app_id,
+                    'detail_app_id': time_app_id,
+                    'relationship_type': 'AT_TIME' # 或 'TIME'
+                })
 
-            # --- 提取并处理动作 ---
-            for action_desc in memory.get('actions', []):
-                 if not action_desc:
-                     continue
-                 action_app_id = f"action_{abs(hash(action_desc))}"
-                 all_event_to_detail_relationships.append({
-                     'event_app_id': event_app_id,
-                     'detail_app_id': action_app_id,
-                     'relationship_type': 'INVOLVES_ACTION' # 或 'ACTION'
-                 })
+            # - 提取并处理动作 -
+            for action_desc in memory.get('actions', []): # **关键修改：直接获取**
+                if not action_desc: continue
+                action_app_id = f"action_{abs(hash(action_desc))}"
+                all_event_to_detail_relationships.append({
+                    'event_app_id': event_app_id,
+                    'detail_app_id': action_app_id,
+                    'relationship_type': 'INVOLVES_ACTION' # 或 'ACTION'
+                })
 
-            # --- 提取并处理参与者 ---
-            for actor_name in memory.get('actors', []):
-                 if not actor_name:
-                     continue
-                 # 注意：actors 可能包含角色的 app_id
-                 # 如果 actor_name 是一个已知的角色 ID，则应连接到 Character 节点
-                 # 否则，可以将其视为一个 Actor 节点
-                 # 这里假设 actor_name 是一个名称，我们创建一个 Actor 节点
-                 actor_app_id = f"actor_{abs(hash(actor_name))}"
-                 all_event_to_detail_relationships.append({
-                     'event_app_id': event_app_id,
-                     'detail_app_id': actor_app_id,
-                     'relationship_type': 'INVOLVES_ACTOR' # 或 'ACTOR'
-                 })
+            # - 提取并处理参与者 (Actors) -
+            for actor_name in memory.get('actors', []): # **关键修改：直接获取**
+                if not actor_name: continue
+                actor_app_id = f"actor_{abs(hash(actor_name))}"
+                all_event_to_detail_relationships.append({
+                    'event_app_id': event_app_id,
+                    'detail_app_id': actor_app_id,
+                    'relationship_type': 'INVOLVES_ACTOR' # 或 'ACTOR'
+                })
 
-            # --- 提取并处理情感 ---
-            for emotion_desc in memory.get('emotions', []):
-                 if not emotion_desc:
-                     continue
-                 emotion_app_id = f"emotion_{abs(hash(emotion_desc))}"
-                 all_event_to_detail_relationships.append({
-                     'event_app_id': event_app_id,
-                     'detail_app_id': emotion_app_id,
-                     'relationship_type': 'HAS_EMOTION' # 或 'EMOTION'
-                 })
+            # - 提取并处理情感 -
+            for emotion_desc in memory.get('emotions', []): # **关键修改：直接获取**
+                if not emotion_desc: continue
+                emotion_app_id = f"emotion_{abs(hash(emotion_desc))}"
+                all_event_to_detail_relationships.append({
+                    'event_app_id': event_app_id,
+                    'detail_app_id': emotion_app_id,
+                    'relationship_type': 'HAS_EMOTION' # 或 'EMOTION'
+                })
 
-            # --- 提取并处理物品 ---
-            for item_name in memory.get('items', []):
-                 if not item_name:
-                     continue
-                 item_app_id = f"item_{abs(hash(item_name))}"
-                 all_event_to_detail_relationships.append({
-                     'event_app_id': event_app_id,
-                     'detail_app_id': item_app_id,
-                     'relationship_type': 'USES_ITEM' # 或 'ITEM'
-                 })
+            # - 提取并处理物品 -
+            for item_name in memory.get('items', []): # **关键修改：直接获取**
+                if not item_name: continue
+                item_app_id = f"item_{abs(hash(item_name))}"
+                all_event_to_detail_relationships.append({
+                    'event_app_id': event_app_id,
+                    'detail_app_id': item_app_id,
+                    'relationship_type': 'USES_ITEM' # 或 'ITEM'
+                })
 
-        # --- 写入 Event -> Detail 关系 CSV ---
+        # - 写入 Event -> Detail 关系 CSV -
         with open(event_to_detail_relationships_csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['event_app_id', 'detail_app_id', 'relationship_type']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
             for rel in all_event_to_detail_relationships:
                 writer.writerow(rel)
+        print(f"- 事件-衍生节点关系 CSV 文件已保存至: {event_to_detail_relationships_csv_filename} -")
 
-        print(f"--- 事件-衍生节点关系 CSV 文件已保存至: {event_to_detail_relationships_csv_filename} ---")
 
-
-        # --- 保存时间链 CSV ---
-        sorted_memories = sorted(memories, key=lambda m: (m.get('time', {}).get('age', 0), m.get('time', {}).get('specific', '')))
-        with open(temporal_chain_filename, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['current_event_app_id', 'next_event_app_id']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        # --- 保存事件细节 CSV (可选 - 处理传入的 details) ---
+        # **关键修改：只处理传入的 details 列表**
+        details_filename = os.path.join(self.temp_csv_dir, f"event_details_{character_id}.csv")
+        with open(details_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['detail_id', 'event_app_id', 'type', 'content', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
             writer.writeheader()
-            for i in range(len(sorted_memories) - 1):
-                current_event_id = sorted_memories[i].get('id')
-                next_event_id = sorted_memories[i+1].get('id')
-                if current_event_id and next_event_id:
-                    writer.writerow({
-                        'current_event_app_id': current_event_id,
-                        'next_event_app_id': next_event_id
-                    })
-        print(f"--- 时间链 CSV 文件已保存至: {temporal_chain_filename} ---")
-
-
-        # --- 新增：保存角色间关系 CSV ---
-        if character_to_character_relationships:
-            with open(char_to_char_relationships_filename, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['relationship_id', 'from_character_app_id', 'to_character_app_id', 'relationship_type', 'description', 'strength', 'properties']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                for rel in character_to_character_relationships:
-                    rel_props = {
-                        'relationship_id': rel.get('relationship_id', str(uuid.uuid4())),
-                        'from_character_app_id': rel.get('from_character_app_id'),
-                        'to_character_app_id': rel.get('to_character_app_id'),
-                        'relationship_type': rel.get('relationship_type', 'UNKNOWN'),
-                        'description': rel.get('description', ''),
-                        'strength': rel.get('strength', 50)
+            # 假设 memory 的 'details' 字段包含细粒度信息 (如果有的话)
+            for memory in memories:
+                event_app_id = memory.get('id')
+                if not event_app_id:
+                    continue
+                # 提取事件细节（假设在memory的details字段中）
+                details = memory.get('details', []) # 假设 memory 有 details 字段
+                for detail in details:
+                    detail_id = str(uuid.uuid4())
+                    detail_props = {
+                        'detail_id': detail_id,
+                        'event_app_id': event_app_id,
+                        'type': detail.get('type', 'DETAIL'),
+                        'content': detail.get('content', '')
                     }
-                    # 可以将其他关系属性存入properties
-                    dynamic_props_rel = {k: v for k, v in rel.items() if k not in ['relationship_id', 'from_character_app_id', 'to_character_app_id', 'relationship_type', 'description', 'strength', 'properties']}
-                    for k, v in dynamic_props_rel.items():
+                    # 将 detail 中的其他动态属性放入 properties
+                    dynamic_props = {k: v for k, v in detail.items() if k not in ['type', 'content', 'detail_id', 'event_app_id', 'properties']}
+                    for k, v in dynamic_props.items():
                         if isinstance(v, (dict, list)):
-                            dynamic_props_rel[k] = json.dumps(v, ensure_ascii=False)
-                    json_str_rel = json.dumps(dynamic_props_rel, ensure_ascii=False)
-                    rel_props['properties'] = base64.b64encode(json_str_rel.encode('utf-8')).decode('utf-8')
-                    writer.writerow(rel_props)
-            print(f"--- 角色间关系 CSV 文件已保存至: {char_to_char_relationships_filename} ---",flush=True)
-        else:
-            print("--- 没有角色间关系需要保存 ---")
-        # ---
+                            dynamic_props[k] = json.dumps(v, ensure_ascii=False)
+                    json_str = json.dumps(dynamic_props, ensure_ascii=False)
+                    detail_props['properties'] = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
+                    writer.writerow(detail_props)
+        print(f"- 事件细节 CSV 文件已保存至: {details_filename} -")
 
-        # --- 修改返回值，包含新增的文件名 ---
+
+        # --- 保存时间链 CSV (可选 - 基于 memory 的 age 排序) ---
+        # **关键修改：处理包含中文单位的年龄字符串**
+        temporal_chain_filename = os.path.join(self.temp_csv_dir, f"temporal_chain_{character_id}.csv")
+        with open(temporal_chain_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['from_event_app_id', 'to_event_app_id', 'relationship_type', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
+            writer.writeheader()
+            # 这里需要根据 memory 的时间顺序来建立事件间的时间链关系
+            # 示例：简单的相邻事件链接 (按 memory 的 age 顺序)
+            # **关键修改：排序依据改为 memory 的 age 字段，并处理字符串格式**
+            # 定义一个辅助函数来提取年龄数字
+            def extract_age_float(memory_item):
+                time_str = memory_item.get('time_at_occurrence', memory_item.get('time', {}).get('age', '0'))
+                # 使用正则表达式查找数字（包括小数）
+                match = re.search(r'(\d+(?:\.\d+)?)', str(time_str))
+                if match:
+                    try:
+                        return float(match.group(1))
+                    except ValueError:
+                        # 如果转换失败，返回 0 或其他默认值
+                        return 0.0
+                else:
+                    # 如果没有找到数字，返回 0 或其他默认值
+                    return 0.0
+
+            # 使用辅助函数进行排序
+            sorted_memories = sorted(memories, key=extract_age_float)
+            for i in range(len(sorted_memories) - 1):
+                from_event_id = sorted_memories[i].get('id')
+                to_event_id = sorted_memories[i+1].get('id')
+                if from_event_id and to_event_id:
+                    writer.writerow({
+                        'from_event_app_id': from_event_id,
+                        'to_event_app_id': to_event_id,
+                        'relationship_type': 'FOLLOWS',
+                        'properties': base64.b64encode(json.dumps({}, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+                    })
+        print(f"- 时间链 CSV 文件已保存至: {temporal_chain_filename} -")
+
+
+        # --- 新增：保存主角到关联角色的关系 CSV ---
+        # **关键修改：利用 related_characters 中的 'relationship_to_protagonist' 字段生成主角到关联角色的关系 CSV。**
+        # 收集主角到关联角色的关系
+        protagonist_to_related_rels = []
+        protagonist_id = main_character.get('id')
+        for rel_char in related_characters:
+            rel_char_id = rel_char.get('id')
+            # **关键修改：直接使用 'relationship_to_protagonist' 字段**
+            rel_type_from_main = rel_char.get('relationship_to_protagonist', '关联角色')
+            # 可以添加更多属性，如描述、强度等
+            rel_description = f"{main_character.get('name')} 与 {rel_char.get('name')} 的关系是 {rel_type_from_main}"
+            rel_strength = 70 # 可以根据具体逻辑计算或设置默认值
+
+            protagonist_to_related_rels.append({
+                'relationship_id': str(uuid.uuid4()), # 为关系生成唯一ID
+                'from_character_app_id': protagonist_id,
+                'to_character_app_id': rel_char_id,
+                'relationship_type': rel_type_from_main, # 使用新字段值作为关系类型
+                'description': rel_description,
+                'strength': rel_strength,
+                # 如果需要，可以添加更多属性到 properties
+                'properties': base64.b64encode(json.dumps({
+                    'source_relationship_field': 'relationship_to_protagonist',
+                    'calculated_strength': rel_strength
+                }, ensure_ascii=False).encode('utf-8')).decode('utf-8')
+            })
+
+        # 将主角到关联角色的关系与其他推断的关系合并
+        all_char_to_char_relationships = protagonist_to_related_rels # 开始时只包含基于新字段的关系
+        if character_to_character_relationships:
+            all_char_to_char_relationships.extend(character_to_character_relationships) # 合并其他推断关系
+
+        # 写入合并后的角色间关系 CSV
+        with open(char_to_char_relationships_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['relationship_id', 'from_character_app_id', 'to_character_app_id', 'relationship_type', 'description', 'strength', 'properties']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, quoting=csv.QUOTE_ALL, quotechar='"')
+            writer.writeheader()
+            for rel in all_char_to_char_relationships:
+                writer.writerow(rel)
+        print(f"- 角色间关系 CSV 文件已保存至: {char_to_char_relationships_filename} -", flush=True)
+        # --- 结束新增 ---
+
+
+        # 修改返回值，包含新增的文件名
         result = {
             "nodes_file": os.path.basename(nodes_filename),
-            "impressions_file": os.path.basename(impressions_filename),
+            # "impressions_file": os.path.basename(impressions_filename), # 如果有印象节点
             "entity_event_relationships_file": os.path.basename(relationships_filename), # 旧的实体-事件关系
             "temporal_chain_file": os.path.basename(temporal_chain_filename),
             "details_file": os.path.basename(details_filename),
             "event_to_detail_relationships_file": os.path.basename(event_to_detail_relationships_csv_filename), # 新增：事件-衍生节点关系
-            "places_file": os.path.basename(os.path.join(self.temp_csv_dir, f"places_{character_id}.csv")), # 新增
-            "times_file": os.path.basename(os.path.join(self.temp_csv_dir, f"times_{character_id}.csv")), # 新增
-            "actions_file": os.path.basename(os.path.join(self.temp_csv_dir, f"actions_{character_id}.csv")), # 新增
-            "actors_file": os.path.basename(os.path.join(self.temp_csv_dir, f"actors_{character_id}.csv")), # 新增
-            "emotions_file": os.path.basename(os.path.join(self.temp_csv_dir, f"emotions_{character_id}.csv")), # 新增
-            "items_file": os.path.basename(os.path.join(self.temp_csv_dir, f"items_{character_id}.csv")), # 新增
+            "places_file": os.path.basename(places_filename), # 新增
+            "times_file": os.path.basename(times_filename), # 新增
+            "actions_file": os.path.basename(actions_filename), # 新增
+            "actors_file": os.path.basename(actors_filename), # 新增
+            "emotions_file": os.path.basename(emotions_filename), # 新增
+            "items_file": os.path.basename(items_filename), # 新增
+            # **修改：返回新的角色间关系文件名**
+            "char_to_char_relationships_file": os.path.basename(char_to_char_relationships_filename),
         }
-        if character_to_character_relationships:
-            result["char_to_char_relationships_file"] = os.path.basename(char_to_char_relationships_filename)
-        # ---
+
         return result
 
     # --- 在数据导入后，计算并存储向量的方法 ---
@@ -2089,7 +2108,7 @@ class GraphStore:
 if __name__ == "__main__":
     try:
         graph_store = GraphStore(
-            uri="bolt://neo4j-latest:7687",
+            uri="bolt://neo4j-latest-new:7687",
             user="neo4j",
             password="zyh123456",
             database="neo4j"

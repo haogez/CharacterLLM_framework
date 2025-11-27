@@ -48,7 +48,7 @@ memory_store = ChromaMemoryStore(persist_directory="./chroma_db_full")
 response_flow = ResponseFlow(character_llm)
 
 graph_store = GraphStore(
-    uri="bolt://neo4j-latest:7687",
+    uri="bolt://neo4j-latest-new:7687",
     user="neo4j",
     password="zyh123456",
     database="neo4j"
@@ -403,16 +403,11 @@ async def generate_and_store_fine_grained_memories(
         character_name = main_character.get("name", "未知角色")
         log_info(f"开始为角色 [{character_id}: {character_name}] 生成细粒度记忆片段")
         log_info("开始执行完整的故事生成流程...")
-        story_gen_start_time = time.time()
 
-        # --- 修改：首先生成 story_idea ---
-        story_idea = await story_memory_generator.generate_idea(main_character) # 调用 StoryBasedMemoryGenerator 的方法
+        # ... (story_idea, refine_characters) ...
+        story_idea = await story_memory_generator.generate_idea(main_character)
         if not story_idea:
             raise ValueError("生成故事灵感失败")
-
-        log_info(f"故事灵感生成完成，耗时: {time.time() - story_gen_start_time:.2f} 秒")
-        # ---
-
 
         log_info("开始完善角色背景故事...")
         refine_start_time = time.time()
@@ -422,10 +417,8 @@ async def generate_and_store_fine_grained_memories(
 
         log_info("开始生成分章节人生故事...")
         chapter_gen_start_time = time.time()
-        # --- 修改：调用生成章节故事的方法，并传入 story_idea ---
-        # chaptered_stories = await story_memory_generator.generate_chaptered_lifespan_story(main_character, related_characters, story_idea.get('story_idea', ''))
+        # **修改：调用生成章节故事的方法，并传入 story_idea 和包含 relationship_to_protagonist 的 refined_related_chars**
         chaptered_stories = await story_memory_generator.generate_chaptered_lifespan_story(refined_main_char, refined_related_chars, story_idea.get('story_idea', ''))
-        # ---
         if not chaptered_stories:
             raise ValueError("生成分章节人生故事失败")
 
@@ -433,32 +426,108 @@ async def generate_and_store_fine_grained_memories(
         log_info("开始从故事中提取记忆片段...")
         memory_extraction_start_time = time.time()
 
-        # --- 修改：调用提取记忆的方法，传入章节列表 ---
-        extracted_memories = await story_memory_generator.extract_memories_from_lifespan_story(chaptered_stories, refined_main_char, refined_related_chars)
-        # ---
+        # **修改：调用提取记忆的方法，传入章节列表 - 这里直接使用 chaptered_stories 作为 memories**
+        # extracted_memories = await story_memory_generator.extract_memories_from_lifespan_story(chaptered_stories, refined_main_char, refined_related_chars)
+        extracted_memories = chaptered_stories # 直接使用生成的结构化对话场景
+        log_info(f"使用已生成的结构化对话场景作为记忆，共 {len(extracted_memories)} 个。")
 
-        log_debug(f"提取记忆函数返回，共 {len(extracted_memories)} 个项目")
         log_info(f"提取完成，共 {len(extracted_memories)} 条记忆片段，耗时: {time.time() - memory_extraction_start_time:.2f} 秒")
 
         log_info("开始从故事中提取实体和关系...")
         entity_extraction_start_time = time.time()
 
-        # --- 修改：调用提取实体和关系的方法，传入章节列表拼接的完整故事 ---
-        full_story_string_for_extraction = "\n\n".join([chapter["original_context"] for chapter in chaptered_stories])
-        entities, relationships_from_story, imported_char_to_char_rels = await story_memory_generator.extract_entities_and_relationships_from_story(
+        # **修改：调用提取实体和关系的方法，传入章节列表拼接的完整故事 ---
+        # **关键修改：不再调用 infer_character_relationships，直接使用 related_characters 中的 relationship_to_protagonist 字段**
+        full_story_string_for_extraction = "\n\n".join([scene["dialogue_content"] for scene in chaptered_stories]) # 或其他合适的拼接方式
+        entities, relationships_from_story, _ = await story_memory_generator.extract_entities_and_relationships_from_story( # 注意：第三个返回值是 character_to_character_relationships，我们不再需要它
             full_story_string_for_extraction, # 传入完整故事字符串
             refined_main_char,
             refined_related_chars,
             extracted_memories,
             graph_store
         )
-        imported_char_to_char_count = len(imported_char_to_char_rels) if imported_char_to_char_rels else 0
-        log_debug(f"提取实体和关系函数返回，实体 {len(entities)} 个，非事件关系 {len(relationships_from_story)} 条，角色间关系 {imported_char_to_char_count} 条")
+        # imported_char_to_char_count = len(imported_char_to_char_rels) if imported_char_to_char_rels else 0
+        imported_char_to_char_count = len(related_characters) # 我们现在有 N 个关联角色，意味着有 N 条主角 -> 关联角色的关系
         log_info(f"从故事中提取实体和关系耗时: {time.time() - entity_extraction_start_time:.2f} 秒")
 
 
-        # 现在所有数据（主角色、关联角色、实体、记忆、关系）都已通过 story_memory_generator 中的 save_entities_and_relationships_to_csv 和 import_nodes/relationships_from_csv 一次性注入
-        log_info(f"所有图谱数据（节点、印象、实体-事件关系、时间链、事件细节、角色-角色关系）已通过 extract_entities_and_relationships_from_story 流程注入完成。")
+        # **修改：保存数据到 CSV，传入包含 relationship_to_protagonist 的 related_characters**
+        log_info(f"--- 步骤 6: 将数据保存为 CSV 文件 ---")
+        csv_files_info = graph_store.save_entities_and_relationships_to_csv(
+            refined_main_char, # main_character
+            refined_related_chars, # related_characters (现在包含 relationship_to_protagonist)
+            entities, # entities
+            relationships_from_story, # relationships
+            extracted_memories, # memories (结构化对话场景)
+            character_id, # character_id
+            character_to_character_relationships=None # **关键修改：不再传入推断的关系列表**
+        )
+        log_info(f"CSV 文件保存完成，文件信息: {csv_files_info}")
+
+        # **修改：导入数据到 Neo4j，不再导入推断的关系**
+        nodes_filename = csv_files_info.get("nodes_file")
+        # impressions_filename = csv_files_info.get("impressions_file") # 如果有印象关系
+        entity_event_relationships_filename = csv_files_info.get("entity_event_relationships_file")
+        temporal_chain_filename = csv_files_info.get("temporal_chain_file")
+        details_filename = csv_files_info.get("details_file")
+        char_to_char_relationships_filename = csv_files_info.get("char_to_char_relationships_file") # 新增
+
+        # 导入节点
+        if nodes_filename:
+            log_info(f"正在导入节点文件: {nodes_filename}")
+            success_nodes = graph_store.import_nodes_from_csv(nodes_filename)
+            if success_nodes:
+                log_success(f"节点数据已成功从 CSV {nodes_filename} 导入 Neo4j。")
+            else:
+                log_error(f"节点数据从 CSV {nodes_filename} 导入 Neo4j 失败。")
+        else:
+            log_warning("没有节点文件需要导入。")
+
+        # 导入实体-事件关系
+        if entity_event_relationships_filename:
+            log_info(f"正在导入实体-事件关系文件: {entity_event_relationships_filename}")
+            success_entity_event = graph_store.import_entity_event_relationships_from_csv(entity_event_relationships_filename)
+            if success_entity_event:
+                log_success(f"实体-事件关系数据已成功从 CSV {entity_event_relationships_filename} 导入 Neo4j。")
+            else:
+                log_error(f"实体-事件关系数据从 CSV {entity_event_relationships_filename} 导入 Neo4j 失败。")
+        else:
+            log_warning("没有实体-事件关系文件需要导入。")
+
+        # 导入时间链
+        if temporal_chain_filename:
+            log_info(f"正在导入时间链文件: {temporal_chain_filename}")
+            success_temporal = graph_store.import_temporal_chain_from_csv(temporal_chain_filename)
+            if success_temporal:
+                log_success(f"时间链数据已成功从 CSV {temporal_chain_filename} 导入 Neo4j。")
+            else:
+                log_error(f"时间链数据从 CSV {temporal_chain_filename} 导入 Neo4j 失败。")
+        else:
+            log_warning("没有时间链文件需要导入。")
+
+        # 导入事件细节
+        if details_filename:
+            log_info(f"正在导入事件细节文件: {details_filename}")
+            success_details = graph_store.import_event_details_from_csv(details_filename)
+            if success_details:
+                log_success(f"事件细节数据已成功从 CSV {details_filename} 导入 Neo4j。")
+            else:
+                log_error(f"事件细节数据从 CSV {details_filename} 导入 Neo4j 失败。")
+        else:
+            log_warning("没有事件细节文件需要导入。")
+
+        # **新增：导入主角到关联角色的关系**
+        if char_to_char_relationships_filename:
+            log_info(f"正在导入主角到关联角色的关系文件: {char_to_char_relationships_filename}")
+            success_char_to_char = graph_store.import_character_to_character_relationships_from_csv(char_to_char_relationships_filename) # 假设这个方法能处理新的 CSV 格式
+            if success_char_to_char:
+                log_success(f"主角到关联角色的关系数据已成功从 CSV {char_to_char_relationships_filename} 导入 Neo4j。")
+            else:
+                log_error(f"主角到关联角色的关系数据从 CSV {char_to_char_relationships_filename} 导入 Neo4j 失败。")
+        else:
+            log_warning("没有主角到关联角色关系文件需要导入。")
+
+        # ... (其余导入步骤，如 impressions, details 等) ...
 
         memory_gen_time = time.time() - memory_start
         # 由于所有数据都已通过内部流程注入
@@ -479,6 +548,7 @@ async def generate_and_store_fine_grained_memories(
     except Exception as e:
         error_detail = f"细粒度记忆片段生成失败: {str(e)}\n{traceback.format_exc()}"
         log_error(error_detail)
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
