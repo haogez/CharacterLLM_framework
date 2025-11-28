@@ -72,6 +72,17 @@ class GraphStore:
         # 确保 embeddings 成功初始化后才尝试初始化 Neo4jVector
         if self.embeddings is not None:
             try:
+                dim = len(self.embeddings.embed_query("ping"))
+            except Exception:
+                dim = 1536
+
+            try:
+                self._ensure_vector_index(
+                    index_name="impression_embeddings",
+                    label="Impression",
+                    vector_prop="impression_embedding",
+                    dimension=dim,
+                )
                 self.neo4j_vector_impressions = Neo4jVector.from_existing_index(
                     embedding=self.embeddings, # 现在 self.embeddings 已存在且配置正确
                     url=self.uri,
@@ -116,6 +127,32 @@ class GraphStore:
             import traceback
             traceback.print_exc()
             raise e
+
+    def _ensure_vector_index(self, index_name: str, label: str, vector_prop: str, dimension: int) -> None:
+        """确保指定的向量索引存在，不存在则创建。"""
+        with self.driver.session(database=self.database) as session:
+            try:
+                result = session.run(
+                    "SHOW INDEXES YIELD name, type WHERE type = 'VECTOR' AND name = $name RETURN name",
+                    name=index_name,
+                )
+                exists = result.single() is not None
+                if exists:
+                    print(f"✅ 向量索引 '{index_name}' 已存在，无需创建。")
+                    return
+
+                print(f"ℹ️  未找到向量索引 '{index_name}'，正在创建（维度: {dimension}）...")
+                session.run(
+                    "CALL db.index.vector.createNodeIndex($name, $label, $prop, $dim, 'cosine')",
+                    name=index_name,
+                    label=label,
+                    prop=vector_prop,
+                    dim=dimension,
+                )
+                print(f"✅ 向量索引 '{index_name}' 创建完成。")
+            except Exception as e:
+                print(f"⚠️  检查/创建向量索引 '{index_name}' 失败: {e}")
+                print("   语义检索可能不可用，请手动检查 Neo4j 配置。")
 
     def close(self):
         if self.driver:

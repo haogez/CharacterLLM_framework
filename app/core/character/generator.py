@@ -389,17 +389,33 @@ class CharacterGenerator:
             character_data["occupation"] = "Unknown occupation"
         if "past_experience" not in character_data:
             character_data["past_experience"] = ""
-        elif strict_timeline:
-            character_data["past_experience"] = self._ensure_timeline_format(
-                character_data["past_experience"], "past_experience", character_data["age"]
-            )
+        else:
+            if isinstance(character_data["past_experience"], list):
+                character_data["past_experience"] = "；".join(
+                    [str(item) for item in character_data["past_experience"] if str(item).strip()]
+                )
+            elif isinstance(character_data["past_experience"], (dict, tuple)):
+                character_data["past_experience"] = json.dumps(character_data["past_experience"], ensure_ascii=False)
+
+            if strict_timeline:
+                character_data["past_experience"] = self._ensure_timeline_format(
+                    character_data["past_experience"], "past_experience", character_data["age"]
+                )
 
         if "background" not in character_data:
             character_data["background"] = "Unknown background"
-        elif strict_timeline:
-            character_data["background"] = self._ensure_timeline_format(
-                character_data["background"], "background", character_data["age"]
-            )
+        else:
+            if isinstance(character_data["background"], list):
+                character_data["background"] = "；".join(
+                    [str(item) for item in character_data["background"] if str(item).strip()]
+                )
+            elif isinstance(character_data["background"], (dict, tuple)):
+                character_data["background"] = json.dumps(character_data["background"], ensure_ascii=False)
+
+            if strict_timeline:
+                character_data["background"] = self._ensure_timeline_format(
+                    character_data["background"], "background", character_data["age"]
+                )
         
         if "personality" not in character_data:
             character_data["personality"] = {
