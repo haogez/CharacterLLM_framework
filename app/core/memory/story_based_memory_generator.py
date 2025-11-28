@@ -93,7 +93,12 @@ class StoryBasedMemoryGenerator:
             """
 
             try:
-                related_char = await self.character_llm.generate_character(related_desc)
+                related_char = await self.character_llm.generate_character(
+                    related_desc,
+                    enforce_protagonist_relationship=False,
+                    relationship_override=role_hint,
+                    timeline_mode="relaxed",
+                )
                 related_char["id"] = related_char.get("id") or str(uuid.uuid4())
                 related_characters.append(related_char)
                 log_info(f"  - 生成关联角色 {i+1}/{count}: {related_char.get('name')} ({related_char.get('occupation')})")
@@ -428,10 +433,10 @@ class StoryBasedMemoryGenerator:
         log_info(f"开始为角色 {main_character.get('name')} 生成结构化对话场景...")
         start_time = time.time()
 
-        # 1. 从 main_character.background 提取格式化经历
-        background = main_character.get('background', '')
+        # 1. 从主角的时间线经历中提取格式化片段，优先使用 past_experience
+        timeline_text = main_character.get('past_experience') or main_character.get('background', '')
         age_pattern = r"(\d+(?:\.\d+)?岁(?:\.\d+)?时：.*?)(?=\.|$|\d+(?:\.\d+)?岁(?:\.\d+)?时：)"
-        formatted_experiences = re.findall(age_pattern, background, re.DOTALL)
+        formatted_experiences = re.findall(age_pattern, timeline_text, re.DOTALL)
         experiences_by_age = {}
         for exp in formatted_experiences:
             match = re.match(r"(\d+(?:\.\d+)?)岁(?:\.\d+)?时：(.*)", exp)
@@ -550,10 +555,8 @@ class StoryBasedMemoryGenerator:
                 log_error("关联角色生成失败，无法继续生成故事。")
                 return ""
 
-        refined_main_char, refined_related_chars = await self.refine_characters_with_backgrounds(character_data, related_characters)
-
-        # **调用修改后的方法，获取结构化对话场景列表**
-        structured_scenes = await self.generate_chaptered_lifespan_story(refined_main_char, refined_related_chars, story_idea.get('story_idea', ''))
+        # 直接使用已有的时间线内容生成结构化对话场景，不再补全背景故事
+        structured_scenes = await self.generate_chaptered_lifespan_story(character_data, related_characters, story_idea.get('story_idea', ''))
 
         # **如果仍需要完整字符串（例如用于关系推断），可以在这里拼接场景对话内容**
         # full_story_string = "\n\n".join([scene["dialogue_content"] for scene in structured_scenes])
@@ -720,12 +723,8 @@ class StoryBasedMemoryGenerator:
         # 例如，为每个场景创建一个 Event 节点，并建立相关关系
         # (这部分逻辑在 graph_store.save_entities_and_relationships_to_csv 中处理)
 
-        # 3. 推断角色间关系
-        character_to_character_relationships = await self.infer_character_relationships(character_data, related_characters, graph_store)
-
         log_success(f"从结构化对话场景中提取了 {len(entities)} 个非人物实体")
         log_info(f"提取实体和关系耗时: {time.time() - start_time:.2f} 秒")
 
-        # 返回空列表或根据需要返回处理后的实体和关系
-        # 主要逻辑已移至 graph_store.save_entities_and_relationships_to_csv
-        return [], [], character_to_character_relationships # (entities, non_event_relationships, char_to_char_relationships)
+        # 关系链由 GraphStore 基于参与者和时间线生成，这里只返回实体
+        return [], [], [] # (entities, non_event_relationships, char_to_char_relationships)

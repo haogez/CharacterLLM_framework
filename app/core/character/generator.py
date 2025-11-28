@@ -3,9 +3,9 @@
 """
 
 import json
-import os
 import asyncio
 import uuid
+import re
 from typing import Dict, List, Any, Optional, Tuple
 
 from app.core.llm.openai_client import CharacterLLM, OpenAIClient
@@ -15,8 +15,12 @@ class CharacterGenerator:
         self.character_llm = character_llm or CharacterLLM()
     
     async def generate_character(self, description: str) -> Dict[str, Any]:
-        character_data = await self.character_llm.generate_character(description)
-        self._validate_and_fix_character_data(character_data)
+        character_data = await self.character_llm.generate_character(
+            description,
+            enforce_protagonist_relationship=True,
+            timeline_mode="strict",
+        )
+        self._validate_and_fix_character_data(character_data, strict_timeline=True)
         return character_data
 
     async def generate_related_characters(self, main_character: Dict[str, Any], count: int = 5) -> List[Dict[str, Any]]:
@@ -124,11 +128,15 @@ class CharacterGenerator:
             重要：生成的角色与主角的关系必须是 {entity_type}。
             """
             try:
-                related_char = await self.character_llm.generate_character(related_desc)
+                related_char = await self.character_llm.generate_character(
+                    related_desc,
+                    enforce_protagonist_relationship=False,
+                    relationship_override=entity_type,
+                    timeline_mode="relaxed",
+                )
                 related_char["id"] = related_char.get("id") or str(uuid.uuid4())
-                # **修改：在 generate_character 调用后，立即设置正确的 'relationship_to_protagonist' 字段**
-                # 这样可以确保即使 generate_character 内部有设置逻辑，也会被正确的值覆盖
                 related_char["relationship_to_protagonist"] = entity_type
+                self._validate_and_fix_character_data(related_char, strict_timeline=False)
                 related_characters.append(related_char)
                 print(f"  - 根据LLM分析生成关联角色 {generated_count+1}/{count}: {related_char.get('name')} ({related_char.get('occupation')}) - 关系: {entity_type}")
                 generated_count += 1
@@ -232,10 +240,15 @@ class CharacterGenerator:
                     请生成这个角色的详细信息。
                     """
                     try:
-                        related_char = await self.character_llm.generate_character(related_desc)
+                        related_char = await self.character_llm.generate_character(
+                            related_desc,
+                            enforce_protagonist_relationship=False,
+                            relationship_override=entity_type,
+                            timeline_mode="relaxed",
+                        )
                         related_char["id"] = related_char.get("id") or str(uuid.uuid4())
-                        # **修改：在 generate_character 调用后，立即设置正确的 'relationship_to_protagonist' 字段**
                         related_char["relationship_to_protagonist"] = entity_type
+                        self._validate_and_fix_character_data(related_char, strict_timeline=False)
                         related_characters.append(related_char)
                         print(f"  - 根据LLM推断的潜在角色生成 {generated_count+1}/{count}: {related_char.get('name')} ({related_char.get('occupation')}) - 关系: {entity_type}")
                         generated_count += 1
@@ -360,7 +373,7 @@ class CharacterGenerator:
         
         return all_memories
     
-    def _validate_and_fix_character_data(self, character_data: Dict[str, Any]) -> None:
+    def _validate_and_fix_character_data(self, character_data: Dict[str, Any], strict_timeline: bool = True) -> None:
         if "name" not in character_data:
             character_data["name"] = "Unknown name"
         if "age" not in character_data:
@@ -374,8 +387,35 @@ class CharacterGenerator:
             character_data["gender"] = "Unknown gender"
         if "occupation" not in character_data:
             character_data["occupation"] = "Unknown occupation"
+        if "past_experience" not in character_data:
+            character_data["past_experience"] = ""
+        else:
+            if isinstance(character_data["past_experience"], list):
+                character_data["past_experience"] = "；".join(
+                    [str(item) for item in character_data["past_experience"] if str(item).strip()]
+                )
+            elif isinstance(character_data["past_experience"], (dict, tuple)):
+                character_data["past_experience"] = json.dumps(character_data["past_experience"], ensure_ascii=False)
+
+            if strict_timeline:
+                character_data["past_experience"] = self._ensure_timeline_format(
+                    character_data["past_experience"], "past_experience", character_data["age"]
+                )
+
         if "background" not in character_data:
             character_data["background"] = "Unknown background"
+        else:
+            if isinstance(character_data["background"], list):
+                character_data["background"] = "；".join(
+                    [str(item) for item in character_data["background"] if str(item).strip()]
+                )
+            elif isinstance(character_data["background"], (dict, tuple)):
+                character_data["background"] = json.dumps(character_data["background"], ensure_ascii=False)
+
+            if strict_timeline:
+                character_data["background"] = self._ensure_timeline_format(
+                    character_data["background"], "background", character_data["age"]
+                )
         
         if "personality" not in character_data:
             character_data["personality"] = {
@@ -393,3 +433,26 @@ class CharacterGenerator:
         
         if "speech_style" not in character_data:
             character_data["speech_style"] = "Neutral and standard speech pattern."
+
+    def _ensure_timeline_format(self, text: str, label: str, max_age: int) -> str:
+        """
+        Ensure timeline fields strictly follow the "X岁时：..." pattern.
+        Raises ValueError when the pattern is missing so upstream prompts must comply.
+        """
+        if not isinstance(text, str):
+            raise ValueError(f"{label} 必须是字符串且需包含按年龄分段的经历。")
+
+        segments = re.findall(r"(\d+(?:\.\d+)?岁时：[^。]*。?)", text)
+        if not segments:
+            raise ValueError(
+                f"{label} 缺少按 'X岁时：' 切分的经历，请补充从 0 岁到 {max_age} 岁的时间线描述。"
+            )
+
+        normalized_segments = []
+        for seg in segments:
+            normalized = seg.strip()
+            if not normalized.endswith("。"):
+                normalized += "。"
+            normalized_segments.append(normalized)
+
+        return "".join(normalized_segments)
