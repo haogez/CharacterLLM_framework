@@ -3,14 +3,27 @@
 """
 
 import asyncio
+import base64
 import json
 import re
 import time
 import uuid
-from typing import Dict, List, Any, Optional, AsyncGenerator
+from typing import Dict, List, Any, Optional, AsyncGenerator, Tuple
 
 from app.core.llm.openai_client import CharacterLLM
 from app.core.graph.graph_store import GraphStore
+from app.core.utils.log_utils import (
+    log_section_start,
+    log_section_end,
+    log_info,
+    log_warning,
+    log_success,
+    log_error,
+    log_debug,
+    log_chat_start,
+    log_chat_response,
+    log_chat_complete,
+)
 
 class ResponseFlow:
     def __init__(self,
@@ -20,6 +33,8 @@ class ResponseFlow:
         self.graph_store = graph_store or GraphStore()
         self.prefetched_memories: Dict[str, List[Dict[str, Any]]] = {}
         self.prefetch_tasks: Dict[str, asyncio.Task] = {}
+        # 第二条“记忆检索与补充响应线程”的收件箱，用于跨轮延迟补充
+        self.pending_supplements: Dict[str, List[Dict[str, Any]]] = {}
         self.memory_type_rules = {
             "education": "需体现学习方式与思维模式的关联（如记忆中“如何学习”影响“现在如何思考”）",
             "work": "需包含职业技能与价值观的互动（如记忆中“解决问题的技能”反映“职业价值观”）",
@@ -30,6 +45,62 @@ class ResponseFlow:
             "social": "需反映社交模式的形成原因（如记忆中“社交经历”导致“现在的社交习惯”）",
             "growth": "要体现关键转变的内在逻辑（如记忆中“事件经过”推动角色“认知/行为转变”）"
         }
+
+    # --- 线程化设计的基础工具 ---
+    def _segment_user_input(self, user_input: str) -> List[str]:
+        """按照语义片段拆分用户输入，便于记忆检索线程使用。"""
+        segments = []
+        if not user_input:
+            return segments
+
+        rough_parts = re.split(r"[。！？!?]\s*|，\s*|,\s*|;\s*|；\s*", user_input)
+        for part in rough_parts:
+            clean = part.strip()
+            if clean:
+                segments.append(clean)
+        log_debug(f"语义分片结果: {segments}")
+        return segments
+
+    def _plan_memory_strategy(
+        self,
+        segments: List[str],
+        dialogue_type: Optional[str],
+        conversation_history: Optional[List[Dict[str, str]]],
+    ) -> str:
+        """根据语义片段和对话类型，决定补充响应策略。"""
+        last_turn = conversation_history[-1]["content"] if conversation_history else ""
+        contains_question = any(re.search(r"[?？]$", seg) for seg in segments)
+        long_history = conversation_history is not None and len(conversation_history) >= 4
+
+        if contains_question:
+            decision = "now"
+        elif dialogue_type and dialogue_type.lower() in {"安抚", "咨询", "求助"}:
+            decision = "now"
+        elif long_history:
+            decision = "now"
+        elif any(keyword in last_turn for keyword in ["刚刚", "之前", "还记得"]):
+            decision = "next"
+        else:
+            decision = "hold"
+
+        log_info(f"补充响应策略: {decision}（contains_question={contains_question}, long_history={long_history}）", indent=1)
+        return decision
+
+    def _store_pending_supplement(self, character_id: str, payload: Dict[str, Any]) -> None:
+        """将补充响应缓存到收件箱，供下一轮发送。"""
+        self.pending_supplements.setdefault(character_id, []).append(payload)
+        log_warning("补充响应已存入待发送队列，等待下一次对话触发。", indent=1)
+
+    def _emit_pending_supplement(self, character_id: str) -> Optional[Dict[str, Any]]:
+        """尝试弹出一条挂起的补充响应。"""
+        queue = self.pending_supplements.get(character_id, [])
+        if not queue:
+            return None
+        payload = queue.pop(0)
+        if not queue:
+            self.pending_supplements.pop(character_id, None)
+        log_success("检测到上轮遗留的补充响应，准备本轮一并发送。", indent=1)
+        return payload
     
     # --- 新增：通用的角色上下文构建函数 ---
     def _build_user_context(self, character_data: Dict[str, Any], user_character_data: Optional[Dict[str, Any]], scene: Optional[str] = None, dialogue_type: Optional[str] = None) -> str:
@@ -171,53 +242,166 @@ class ResponseFlow:
                      dialogue_type: Optional[str] = None
                      ) -> AsyncGenerator[Dict[str, Any], None]:
         start_time = time.time()
-        # --- 启动后台记忆预取 ---
+        log_chat_start(character_id, user_input)
+
+        # 线程1：对话主线；线程2：记忆检索补充
+        response_count = 0
+
+        # 先检查是否有挂起的补充响应需要在本轮发送
+        pending_supplement = self._emit_pending_supplement(character_id)
+
+        # 启动后台记忆预取
         prefetch_task = None
         if self.graph_store:
             prefetch_task = asyncio.create_task(self._background_memory_prefetch(character_id, user_input, scene))
 
-        # --- 修复：传递 user_character_data ---
+        segments = self._segment_user_input(user_input)
+        strategy = self._plan_memory_strategy(segments, dialogue_type, conversation_history)
         needs_memory = await self._needs_memory(character_data, user_input, user_character_data, scene, dialogue_type)
-        # ---
 
         if not needs_memory:
-            # --- 修复：传递 user_character_data ---
-            direct_resp = await self._generate_direct_response(character_data, user_input, conversation_history, user_character_data, scene, dialogue_type)
-            # ---
-            yield {
+            direct_resp = await self._generate_direct_response(
+                character_data, user_input, conversation_history, user_character_data, scene, dialogue_type
+            )
+            response_payload = {
                 "type": "direct",
                 "content": direct_resp,
                 "timestamp": round(time.time() - start_time, 2)
             }
+            log_chat_response("DIRECT", character_id, user_input, direct_resp, response_payload["timestamp"])
+            response_count += 1
+            yield response_payload
+
+            if pending_supplement:
+                pending_supplement["timestamp"] = round(time.time() - start_time, 2)
+                log_chat_response(
+                    "SUPPLEMENTARY (PENDING)",
+                    character_id,
+                    user_input,
+                    pending_supplement.get("content", ""),
+                    pending_supplement["timestamp"],
+                    len(pending_supplement.get("memories", [])),
+                )
+                response_count += 1
+                yield pending_supplement
+
+            log_chat_complete(character_id, user_input, time.time() - start_time, response_count)
             return
 
-        # --- 修复：传递 user_character_data ---
-        immediate_task = asyncio.create_task(self._generate_immediate_response(character_data, user_input, conversation_history, user_character_data, scene, dialogue_type))
-        # ---
-        # --- 移除：memory_task = asyncio.create_task(self._retrieve_relevant_memories_from_graph(character_id, user_input))
-        # ---
-
-        immediate_resp = await immediate_task
-        yield {
+        immediate_resp = await self._generate_immediate_response(
+            character_data, user_input, conversation_history, user_character_data, scene, dialogue_type
+        )
+        immediate_payload = {
             "type": "immediate",
             "content": immediate_resp,
             "timestamp": round(time.time() - start_time, 2)
         }
+        log_chat_response("IMMEDIATE", character_id, user_input, immediate_resp, immediate_payload["timestamp"])
+        response_count += 1
+        yield immediate_payload
 
-        # --- 移除：memories = await memory_task
-        # ---
-
-        # --- 修改：在 _generate_supplementary_response 内部进行 GraphRAG 检索 ---
-        # 不再传递预先获取的 memories，而是传递 character_id 和 graph_store 实例
-        supplementary_resp = await self._generate_supplementary_response(
-            character_data, user_input, immediate_resp, character_id, conversation_history, user_character_data, scene, dialogue_type, prefetch_task # 传递 character_id, conversation_history, user_character_data
+        memory_result = await self._memory_thread(
+            character_data,
+            user_input,
+            immediate_resp,
+            character_id,
+            conversation_history,
+            user_character_data,
+            scene,
+            dialogue_type,
+            prefetch_task,
+            strategy,
         )
-        # ---
-        yield {
-            "type": "supplementary",
-            "content": supplementary_resp["content"], # 从字典中提取内容
-            "timestamp": round(time.time() - start_time, 2),
-            "memories": supplementary_resp.get("memories", []) # 从字典中提取记忆
+
+        if memory_result and memory_result.get("action") == "send":
+            payload = memory_result["payload"]
+            payload["timestamp"] = round(time.time() - start_time, 2)
+            log_chat_response(
+                "SUPPLEMENTARY",
+                character_id,
+                user_input,
+                payload.get("content", ""),
+                payload["timestamp"],
+                len(payload.get("memories", [])),
+            )
+            response_count += 1
+            yield payload
+        elif memory_result and memory_result.get("action") == "defer":
+            self._store_pending_supplement(character_id, memory_result["payload"])
+
+        if pending_supplement:
+            pending_supplement["timestamp"] = round(time.time() - start_time, 2)
+            log_chat_response(
+                "SUPPLEMENTARY (PENDING)",
+                character_id,
+                user_input,
+                pending_supplement.get("content", ""),
+                pending_supplement["timestamp"],
+                len(pending_supplement.get("memories", [])),
+            )
+            response_count += 1
+            yield pending_supplement
+
+        log_chat_complete(character_id, user_input, time.time() - start_time, response_count)
+
+    async def _memory_thread(
+        self,
+        character_data: Dict[str, Any],
+        user_input: str,
+        immediate_response: str,
+        character_id: str,
+        conversation_history: Optional[List[Dict[str, str]]],
+        user_character_data: Optional[Dict[str, Any]],
+        scene: Optional[str],
+        dialogue_type: Optional[str],
+        prefetch_task: Optional[asyncio.Task],
+        strategy: str,
+    ) -> Optional[Dict[str, Any]]:
+        """记忆检索与补充响应线程，负责检索、生成并决定是否立刻发送。"""
+        log_section_start("记忆线程：检索与生成", "-")
+        log_info("线程启动，准备检索记忆。", indent=1)
+        try:
+            supplementary = await self._generate_supplementary_response(
+                character_data,
+                user_input,
+                immediate_response,
+                character_id,
+                conversation_history,
+                user_character_data,
+                scene,
+                dialogue_type,
+                prefetch_task,
+            )
+        except Exception as exc:
+            log_error(f"记忆线程异常: {exc}", indent=1)
+            log_section_end("-")
+            return None
+
+        content = supplementary.get("content", "").strip()
+        memories = supplementary.get("memories", [])
+
+        if not content and not memories:
+            log_warning("未生成补充响应或相关记忆，线程结束。", indent=1)
+            log_section_end("-")
+            return None
+
+        if strategy == "now":
+            action = "send"
+        elif strategy == "next":
+            action = "defer"
+        else:
+            action = "send" if memories else "defer"
+
+        log_info(f"记忆线程决策: {action} (策略={strategy}, 记忆数={len(memories)})", indent=1)
+        log_section_end("-")
+
+        return {
+            "action": action,
+            "payload": {
+                "type": "supplementary",
+                "content": content,
+                "memories": memories,
+            },
         }
 
     async def _generate_supplementary_response(self,
@@ -231,16 +415,14 @@ class ResponseFlow:
                                              dialogue_type: Optional[str] = None,
                                              prefetch_task: Optional[asyncio.Task] = None
                                              ) -> Dict[str, Any]:
-        print("\n" + "="*60)
-        print(f"📝 生成补充响应...")
-        print(f"   主角色: {character_data.get('name')}")
-        print(f"   用户扮演角色: {user_character_data.get('name') if user_character_data else '默认用户'}")
-        print(f"   用户输入: {user_input}")
+        log_section_start("记忆线程：生成补充响应", "=")
+        log_info(f"主角: {character_data.get('name')}")
+        log_info(f"用户扮演角色: {user_character_data.get('name') if user_character_data else '默认用户'}")
+        log_info(f"用户输入: {user_input}")
         if scene:
-            print(f"   对话场景: {scene}")
+            log_info(f"对话场景: {scene}")
         if dialogue_type:
-            print(f"   对话类型: {dialogue_type}")
-        print("="*60)
+            log_info(f"对话类型: {dialogue_type}")
 
         prefetched = []
         if prefetch_task:
@@ -252,9 +434,10 @@ class ResponseFlow:
             prefetched = self.prefetched_memories.get(character_id, [])
 
         # --- GraphRAG 检索开始 (只检索印象节点) ---
-        print("🔍  开始从 Neo4j 图谱进行 GraphRAG 检索 (仅印象节点)...")
-        print(f"   查询文本: {user_input}")
-        print(f"   目标角色ID: {character_id}")
+        log_section_start("记忆线程：GraphRAG 检索", "-")
+        log_info("开始从 Neo4j 图谱进行 GraphRAG 检索 (仅印象节点)...", indent=1)
+        log_info(f"查询文本: {user_input}", indent=1)
+        log_info(f"目标角色ID: {character_id}", indent=1)
 
         start_time = time.time()
         all_raw_impressions = []
@@ -262,13 +445,13 @@ class ResponseFlow:
             try:
                 with self.graph_store.driver.session(database=self.graph_store.database) as session:
                     # --- 步骤 1: 关键词匹配 ---
-                    print("🔍  尝试关键词匹配...")
+                    log_debug("尝试关键词匹配...", indent=1)
                     # ... (之前的关键词匹配逻辑保持不变) ...
                     # 1.1 提取用户输入中的关键词
                     keywords = re.findall(r'[\u4e00-\u9fff\w]+', user_input)
                     common_words = {"你", "我", "他", "她", "它", "是", "的", "了", "在", "有", "和", "跟", "与", "吗", "呢", "吧", "啊", "呀", "还", "就", "才", "又", "再", "更", "最", "很", "挺", "太", "非常", "特别", "十分", "有点", "稍微", "几乎", "几乎不", "完全", "全部", "都", "全部", "所有", "每个", "一些", "几个", "某些", "别的", "其他", "另外", "这", "那", "这些", "那些", "这个", "那个", "这里", "那里", "这儿", "那儿", "现在", "然后", "如果", "因为", "所以", "但是", "然而", "虽然", "尽管", "为了", "关于", "对于", "关于", "把", "被", "让", "叫", "请", "让", "使", "帮", "给", "为", "对", "向", "往", "朝", "用", "以", "比", "跟", "和", "同", "与", "及", "以及", "或", "或者", "还是"}
                     keywords = [kw.lower() for kw in keywords if len(kw) > 1 and kw not in common_words]
-                    print(f"   提取关键词: {keywords}")
+                    log_debug(f"提取关键词: {keywords}", indent=2)
 
                     if keywords:
                         # 1.2 构建 Cypher 查询，使用 OR 连接的 CONTAINS
@@ -285,8 +468,8 @@ class ResponseFlow:
                         ORDER BY strength DESC
                         LIMIT 10 // 可以适当增加，因为后续会合并去重
                         """
-                        print(f"   执行关键词查询: {query_keyword}")
-                        print(f"   参数: {params}")
+                        log_debug(f"执行关键词查询: {query_keyword}", indent=2)
+                        log_debug(f"参数: {params}", indent=2)
                         result_keyword = session.run(query_keyword, **params)
                         raw_impressions_keyword = []
                         for record in result_keyword:
@@ -296,13 +479,13 @@ class ResponseFlow:
                                 "strength": record["strength"],
                                 "source": record["source"]
                             })
-                        print(f"   关键词查询返回 {len(raw_impressions_keyword)} 条记录")
+                        log_info(f"关键词查询返回 {len(raw_impressions_keyword)} 条记录", indent=2)
                     else:
                         raw_impressions_keyword = []
-                        print("   关键词提取为空，跳过关键词查询")
+                        log_debug("关键词提取为空，跳过关键词查询", indent=2)
 
                     # --- 步骤 2: 结构化查询 ---
-                    print("🔍  尝试结构化查询...")
+                    log_debug("尝试结构化查询...", indent=1)
                     # ... (之前的结构化查询逻辑保持不变) ...
                     # 2.1 尝试从用户输入中提取结构化信息 (这里简化处理，实际可能需要 NLP)
                     location_names = [kw for kw in keywords if len(kw) > 2] # 简单过滤，认为较长的词可能是地点
@@ -323,8 +506,8 @@ class ResponseFlow:
                          ORDER BY strength DESC
                          LIMIT 5
                          """
-                         print(f"   执行结构化地点查询: {query_structured}")
-                         print(f"   参数: {params_loc}")
+                         log_debug(f"执行结构化地点查询: {query_structured}", indent=2)
+                         log_debug(f"参数: {params_loc}", indent=2)
                          result_structured = session.run(query_structured, **params_loc)
                          for record in result_structured:
                             raw_impressions_structured.append({
@@ -333,10 +516,10 @@ class ResponseFlow:
                                 "strength": record["strength"],
                                 "source": record["source"]
                             })
-                         print(f"   结构化地点查询返回 {len(raw_impressions_structured)} 条记录")
+                         log_info(f"结构化地点查询返回 {len(raw_impressions_structured)} 条记录", indent=2)
 
                     # --- 步骤 3: 向量搜索 (语义搜索) ---
-                    print("🔍  尝试向量搜索 (语义搜索)...")
+                    log_debug("尝试向量搜索 (语义搜索)...", indent=1)
                     # 3.1 搜索与查询语义相关的 Event
                     # semantic_results_events = self.graph_store.semantic_search_events(user_input, k=5)
                     # 3.2 搜索与查询语义相关的 Impression
@@ -358,11 +541,11 @@ class ResponseFlow:
                             })
 
                     raw_impressions_semantic = raw_impressions_semantic_impressions  # 只保留印象搜索结果
-                    print(f"   向量搜索返回 {len(raw_impressions_semantic)} 条记录 (仅来自印象)")
+                    log_info(f"向量搜索返回 {len(raw_impressions_semantic)} 条记录 (仅来自印象)", indent=2)
 
 
                     # --- 步骤 4: 传统语义搜索 (使用 textdistance) ---
-                    print("🔍  尝试传统语义搜索 (基于textdistance)...")
+                    log_debug("尝试传统语义搜索 (基于textdistance)...", indent=1)
                     query_for_semantic = """
                     MATCH (c:Character {app_id: $character_id})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
                     WHERE i.strength > 30 // 选择强度较高的印象进行语义比较
@@ -391,7 +574,7 @@ class ResponseFlow:
                                     "similarity": similarity
                                 })
                         except ImportError:
-                            print("   警告: 未安装 textdistance，跳过传统语义搜索")
+                            log_warning("未安装 textdistance，跳过传统语义搜索", indent=2)
                             break
 
                     semantic_results_legacy.sort(key=lambda x: x["similarity"], reverse=True)
@@ -399,11 +582,14 @@ class ResponseFlow:
                     raw_impressions_semantic_legacy = [r["candidate"] for r in semantic_results_legacy[:top_k_semantic_legacy]]
                     for r in raw_impressions_semantic_legacy:
                         r["source"] = "semantic_legacy"
-                    print(f"   传统语义搜索返回 {len(raw_impressions_semantic_legacy)} 条记录 (基于阈值和 Top-{top_k_semantic_legacy})")
+                    log_info(
+                        f"传统语义搜索返回 {len(raw_impressions_semantic_legacy)} 条记录 (基于阈值和 Top-{top_k_semantic_legacy})",
+                        indent=2,
+                    )
 
 
                     # --- 合并和去重 ---
-                    print("🔍  合并关键词、结构化、向量语义、传统语义搜索结果...")
+                    log_debug("合并关键词、结构化、向量语义、传统语义搜索结果...", indent=1)
                     all_raw_impressions_unfiltered = (
                         raw_impressions_keyword +
                         raw_impressions_structured +
@@ -418,7 +604,7 @@ class ResponseFlow:
                         if imp_id and imp_id not in seen_ids:
                             all_raw_impressions.append(imp)
                             seen_ids.add(imp_id)
-                    print(f"   合并后去重得到 {len(all_raw_impressions)} 条唯一记录")
+                    log_info(f"合并后去重得到 {len(all_raw_impressions)} 条唯一记录", indent=2)
 
                     # --- 解码 properties ---
                     for imp_dict in all_raw_impressions:
@@ -429,29 +615,26 @@ class ResponseFlow:
                                     additional_props = json.loads(decoded_props)
                                     props_dict.update(additional_props)
                                 except (base64.binascii.Error, json.JSONDecodeError, TypeError) as e:
-                                    print(f"解码{node_name} {props_dict.get('app_id', 'unknown')} 的 properties 时出错: {e}")
+                                    log_warning(f"解码{node_name} {props_dict.get('app_id', 'unknown')} 的 properties 时出错: {e}")
                                     pass # 如果解码失败，保留原始 properties 字段
                             # 移除 Base64 编码的 properties 字段
                             props_dict.pop("properties", None)
 
 
             except Exception as e:
-                print(f"❌ GraphRAG 检索失败: {e}")
-                import traceback
-                traceback.print_exc()
+                log_error(f"GraphRAG 检索失败: {e}")
         else:
-            print("❌ GraphStore 实例不存在，无法进行检索。")
+            log_error("GraphStore 实例不存在，无法进行检索。")
 
-        print(f"⏱️  GraphRAG 检索耗时: {time.time()-start_time:.2f}秒")
-        print(f"📊 检索到 {len(all_raw_impressions)} 条相关印象")
+        log_info(f"GraphRAG 检索耗时: {time.time()-start_time:.2f}秒")
+        log_info(f"检索到 {len(all_raw_impressions)} 条相关印象")
         for idx, imp in enumerate(all_raw_impressions, 1):
             impression_content = imp.get("impression", {}).get("impression_content", imp.get("impression", {}).get("content", "未知内容"))
             event_title = imp.get("event", {}).get("event_title", imp.get("event", {}).get("title", "未知事件"))
             strength = imp.get("strength", "未知强度")
             source = imp.get("source", "unknown")
-            print(f"   📌 印象{idx}: 事件={event_title} | 印象内容={impression_content[:50]}... | 强度={strength} | 来源={source}")
-        print("🔍  GraphRAG 检索完成")
-        print("="*60)
+            log_debug(f"印象{idx}: 事件={event_title} | 印象内容={impression_content[:50]}... | 强度={strength} | 来源={source}", indent=1)
+        log_section_end("-")
         # --- GraphRAG 检索结束 ---
 
         if prefetched:
@@ -542,8 +725,8 @@ class ResponseFlow:
 
         response_content = await self.character_llm.client.generate_response(system_prompt=system_prompt, user_prompt=user_prompt)
 
-        print(f"✅ 补充响应生成完成 (长度: {len(response_content.strip())}字)")
-        print("="*60 + "\n")
+        log_success(f"补充响应生成完成 (长度: {len(response_content.strip())}字)")
+        log_section_end("=")
 
         # 返回包含内容和原始印象数据的字典
         # 将 impression 数据格式化为 MemoryResponse 期望的格式

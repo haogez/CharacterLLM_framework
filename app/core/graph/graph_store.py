@@ -47,6 +47,7 @@ class GraphStore:
         self.user = user
         self.password = password
         self.database = database
+        self.text_node_property = text_node_property
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
         self.temp_csv_dir = "./temp_csv"
         os.makedirs(self.temp_csv_dir, exist_ok=True)
@@ -90,8 +91,10 @@ class GraphStore:
                     password=self.password,
                     database=self.database,
                     embedding_node_property="impression_embedding", # 这个属性名需要在导入时创建
+                    text_node_property=self.text_node_property,
                     index_name="impression_embeddings", # 确保索引名称正确且维度匹配
                     search_type="vector",
+                    node_label="Impression",
                 )
                 print("✅ Neo4jVector (impressions) 初始化成功。")
             except Exception as e:
@@ -143,10 +146,16 @@ class GraphStore:
 
                 print(f"ℹ️  未找到向量索引 '{index_name}'，正在创建（维度: {dimension}）...")
                 session.run(
-                    "CALL db.index.vector.createNodeIndex($name, $label, $prop, $dim, 'cosine')",
-                    name=index_name,
-                    label=label,
-                    prop=vector_prop,
+                    f"""
+                    CREATE VECTOR INDEX {index_name} IF NOT EXISTS
+                    FOR (n:{label}) ON (n.{vector_prop})
+                    OPTIONS {{
+                        indexConfig: {{
+                            `vector.dimensions`: $dim,
+                            `vector.similarity_function`: 'cosine'
+                        }}
+                    }}
+                    """,
                     dim=dimension,
                 )
                 print(f"✅ 向量索引 '{index_name}' 创建完成。")
@@ -713,7 +722,7 @@ class GraphStore:
                     MATCH (main:Character {app_id: $main_id}), (other:Character {app_id: $other_id})
                     OPTIONAL MATCH (main)-[:PROTAGONIST_EVENT]->(e:Event)<-[:ASSOCIATED_EVENT]-(other)
                     WITH main, other, collect(e.app_id) AS shared_events
-                    RETURN other.relationship_to_protagonist AS rel, shared_events
+                    RETURN COALESCE(other.relationship_to_protagonist, 'UNKNOWN') AS rel, shared_events
                     """,
                     main_id=main_character_id,
                     other_id=other_character_id
