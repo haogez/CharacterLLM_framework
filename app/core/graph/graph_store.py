@@ -123,6 +123,52 @@ class GraphStore:
             print("--- Neo4j 连接已关闭 ---")
 
 
+    @staticmethod
+    def _normalize_dialogues(raw_dialogue: Any) -> List[Dict[str, Any]]:
+        """
+        将对话内容转换为 [{speaker, content}] 列表。
+        支持列表、JSON 字符串或连续文本（按“角色：内容”分段）。
+        """
+        dialogue_list: List[Dict[str, Any]] = []
+
+        if isinstance(raw_dialogue, list):
+            for entry in raw_dialogue:
+                if isinstance(entry, dict):
+                    speaker = entry.get("speaker") or entry.get("角色") or entry.get("人物")
+                    content = entry.get("content") or entry.get("台词") or entry.get("对白") or entry.get("对话")
+                    if content:
+                        dialogue_list.append({"speaker": speaker, "content": str(content).strip()})
+                elif isinstance(entry, str) and entry.strip():
+                    dialogue_list.append({"speaker": None, "content": entry.strip()})
+            return dialogue_list
+
+        if isinstance(raw_dialogue, str):
+            raw_text = raw_dialogue.strip()
+            if not raw_text:
+                return dialogue_list
+
+            try:
+                parsed = json.loads(raw_text)
+                return GraphStore._normalize_dialogues(parsed)
+            except Exception:
+                pass
+
+            pattern = re.compile(r"(?P<speaker>[\u4e00-\u9fa5A-Za-z0-9_（）()·\s]+)：")
+            matches = list(pattern.finditer(raw_text))
+            if matches:
+                for idx, match in enumerate(matches):
+                    start = match.end()
+                    end = matches[idx + 1].start() if idx + 1 < len(matches) else len(raw_text)
+                    content = raw_text[start:end].strip()
+                    speaker = match.group("speaker").strip()
+                    if content:
+                        dialogue_list.append({"speaker": speaker, "content": content})
+            else:
+                dialogue_list.append({"speaker": None, "content": raw_text})
+
+        return dialogue_list
+
+
     def create_character_node(self, character_data: Dict[str, Any]) -> bool:
         """
         创建或更新角色节点。
@@ -617,6 +663,78 @@ class GraphStore:
                 print(f"获取角色 {character_id} 的相关角色失败: {e}")
                 return []
 
+    def get_relationship_between_characters(self, main_character_id: str, other_character_id: str) -> Dict[str, Any]:
+        """
+        返回两个角色之间的关系类型和描述。
+        优先读取关联角色节点上的 relationship_to_protagonist 字段；
+        若缺失，则依据共同参与的事件生成描述。
+        """
+        with self.driver.session(database=self.database) as session:
+            try:
+                result = session.run(
+                    """
+                    MATCH (main:Character {app_id: $main_id}), (other:Character {app_id: $other_id})
+                    OPTIONAL MATCH (main)-[:PROTAGONIST_EVENT]->(e:Event)<-[:ASSOCIATED_EVENT]-(other)
+                    WITH main, other, collect(e.app_id) AS shared_events
+                    RETURN other.relationship_to_protagonist AS rel, shared_events
+                    """,
+                    main_id=main_character_id,
+                    other_id=other_character_id
+                )
+
+                record = result.single()
+                rel_type = record["rel"] if record and record["rel"] else "UNKNOWN"
+                shared_events = record["shared_events"] if record and record["shared_events"] else []
+
+                description = "" if rel_type != "UNKNOWN" else "共同经历的事件数量" if shared_events else "未知"
+                if rel_type == "UNKNOWN" and shared_events:
+                    description = f"共同参与 {len(shared_events)} 个事件"
+
+                return {"type": rel_type, "description": description}
+            except Exception as e:
+                print(f"获取角色关系失败: {e}")
+                return {"type": "UNKNOWN", "description": "查询失败"}
+
+    def get_places_for_character(self, character_id: str) -> List[Dict[str, str]]:
+        """返回角色经历过的地点列表（Place 节点）。"""
+        with self.driver.session(database=self.database) as session:
+            try:
+                result = session.run(
+                    """
+                    MATCH (c:Character {app_id: $char_id})-[:PROTAGONIST_EVENT|ASSOCIATED_EVENT]->(e:Event)-[:EVENT_LOCATION]->(p:Place)
+                    RETURN DISTINCT p.app_id AS id, p.name AS name
+                    """,
+                    char_id=character_id
+                )
+                return [{"id": rec["id"], "name": rec["name"]} for rec in result]
+            except Exception as e:
+                print(f"获取地点失败: {e}")
+                return []
+
+    def vector_search_impressions(self, query: str, character_id: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """基于 Neo4jVector 的印象检索，失败时返回空列表。"""
+        if not self.neo4j_vector_impressions:
+            return []
+
+        try:
+            try:
+                docs = self.neo4j_vector_impressions.similarity_search(
+                    query,
+                    k=top_k,
+                    filter={"character_id": character_id}
+                )
+            except Exception:
+                docs = self.neo4j_vector_impressions.similarity_search(query, k=top_k)
+            results = []
+            for doc in docs:
+                payload = doc.metadata if hasattr(doc, "metadata") else {}
+                payload["content"] = doc.page_content
+                results.append(payload)
+            return results
+        except Exception as e:
+            print(f"向量检索失败: {e}")
+            return []
+
     def get_character_impressions(self, character_id: str) -> List[Dict[str, Any]]:
         """
         获取指定角色的所有印象及其关联的事件。
@@ -852,6 +970,7 @@ class GraphStore:
                 event_id = memory.get("id")
                 participants = memory.get("participants", []) or []
                 raw_dialogue = memory.get("dialogue_content", [])
+                normalized_dialogues = self._normalize_dialogues(raw_dialogue)
 
                 _write_node({
                     "node_id:ID": event_id,
@@ -865,7 +984,7 @@ class GraphStore:
                     "background": "",
                     "topic": memory.get("topic", ""),
                     "context": memory.get("context", ""),
-                    "dialogue_content": json.dumps(raw_dialogue, ensure_ascii=False) if not isinstance(raw_dialogue, str) else raw_dialogue,
+                    "dialogue_content": json.dumps(normalized_dialogues, ensure_ascii=False),
                     "time_at_occurrence": memory.get("time_at_occurrence", ""),
                     "participants": ";".join(participants),
                 })
@@ -924,24 +1043,13 @@ class GraphStore:
                         "participants": ""
                     })
 
-                dialogue_list = []
-                if isinstance(raw_dialogue, list):
-                    for entry in raw_dialogue:
-                        if isinstance(entry, dict):
-                            speaker = entry.get("speaker") or entry.get("角色") or entry.get("人物")
-                            content = entry.get("content") or entry.get("台词") or entry.get("对白") or entry.get("对话")
-                            if content:
-                                dialogue_list.append({"speaker": speaker, "content": content})
-                        elif isinstance(entry, str):
-                            dialogue_list.append({"speaker": None, "content": entry})
-                elif isinstance(raw_dialogue, str) and raw_dialogue.strip():
-                    dialogue_list.append({"speaker": None, "content": raw_dialogue})
+                dialogue_list = normalized_dialogues
 
                 for idx, dialogue in enumerate(dialogue_list):
                     _write_node({
                         "node_id:ID": f"{event_id}_dialogue_{idx}",
                         "label:LABEL": "Dialogue",
-                        "name": dialogue.get("content", "")[:128],
+                        "name": f"{dialogue.get('speaker') or ''}: {dialogue.get('content', '')[:120]}".strip(': ').strip(),
                         "role": "dialogue",
                         "age": "",
                         "gender": "",
@@ -1017,18 +1125,7 @@ class GraphStore:
                     })
 
                 raw_dialogue = memory.get("dialogue_content", [])
-                dialogue_list = []
-                if isinstance(raw_dialogue, list):
-                    for entry in raw_dialogue:
-                        if isinstance(entry, dict):
-                            speaker = entry.get("speaker") or entry.get("角色") or entry.get("人物")
-                            content = entry.get("content") or entry.get("台词") or entry.get("对白") or entry.get("对话")
-                            if content:
-                                dialogue_list.append({"speaker": speaker, "content": content})
-                        elif isinstance(entry, str):
-                            dialogue_list.append({"speaker": None, "content": entry})
-                elif isinstance(raw_dialogue, str) and raw_dialogue.strip():
-                    dialogue_list.append({"speaker": None, "content": raw_dialogue})
+                dialogue_list = self._normalize_dialogues(raw_dialogue)
 
                 for idx, dialogue in enumerate(dialogue_list):
                     dialogue_id = f"{event_id}_dialogue_{idx}"

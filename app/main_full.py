@@ -137,6 +137,8 @@ class ChatRequest(BaseModel):
     message: str
     conversation_history: Optional[List[Dict[str, str]]] = None
     user_character_id: Optional[str] = None # 新增：用户扮演的角色ID
+    scene: Optional[str] = None
+    dialogue_type: Optional[str] = None
 
 class ChatResponse(BaseModel):
     message: str
@@ -254,6 +256,14 @@ async def get_character_relationships(character_id: str):
     related_chars = graph_store.get_related_characters(character_id)
     return {"character_id": character_id, "related_characters": related_chars}
 
+
+@app.get("/api/v1/characters/{character_id}/places")
+async def get_character_places(character_id: str):
+    if character_id not in characters:
+        raise HTTPException(status_code=404, detail="角色不存在")
+    places = graph_store.get_places_for_character(character_id)
+    return {"character_id": character_id, "places": places}
+
 @app.post("/api/v1/characters/{character_id}/memories/regenerate")
 async def regenerate_character_memories(character_id: str, background_tasks: BackgroundTasks):
     if character_id not in characters:
@@ -303,7 +313,9 @@ async def chat_with_character(request: ChatRequest):
                 character_data=character_data,
                 user_input=request.message,
                 conversation_history=request.conversation_history,
-                user_character_data=user_character_data # 传递用户扮演的角色数据
+                user_character_data=user_character_data, # 传递用户扮演的角色数据
+                scene=request.scene,
+                dialogue_type=request.dialogue_type
             ):
                 response_count += 1
                 # --- 修改：处理新的返回格式 ---

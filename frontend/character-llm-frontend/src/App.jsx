@@ -15,6 +15,11 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false); // 新增：处理状态
   const chatContainerRef = useRef(null); // 新增：滚动引用
   const [selectedUserCharacter, setSelectedUserCharacter] = useState(''); // 新增：用户扮演的角色ID
+  const [sceneOptions, setSceneOptions] = useState([]);
+  const [selectedScene, setSelectedScene] = useState('');
+  const [customScene, setCustomScene] = useState('');
+  const [dialogueType, setDialogueType] = useState('闲聊');
+  const [customDialogueType, setCustomDialogueType] = useState('');
 
   useEffect(() => {
     loadCharacters();
@@ -26,6 +31,30 @@ function App() {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [chatHistory]);
+
+  // 加载角色经历过的场景列表
+  useEffect(() => {
+    if (!selectedCharacter) {
+      setSceneOptions([]);
+      setSelectedScene('');
+      setCustomScene('');
+      setCustomDialogueType('');
+      return;
+    }
+
+    const loadPlaces = async () => {
+      try {
+        const resp = await fetch(`${API_BASE_URL}/characters/${selectedCharacter}/places`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        setSceneOptions(data.places || []);
+      } catch (err) {
+        console.error('加载场景失败', err);
+      }
+    };
+
+    loadPlaces();
+  }, [selectedCharacter]);
 
   const loadCharacters = async () => {
     try {
@@ -127,7 +156,7 @@ function App() {
       // 使用 fetch 发送请求并接收 SSE 响应
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream' // 明确指定接受SSE
         },
@@ -135,7 +164,9 @@ function App() {
           character_id: selectedCharacter,
           message: userMessage,
           conversation_history: cleanHistory,
-          user_character_id: selectedUserCharacter || null
+          user_character_id: selectedUserCharacter || null,
+          scene: (selectedScene === 'custom' ? customScene : selectedScene) || null,
+          dialogue_type: dialogueType === '自定义' ? customDialogueType : dialogueType || null
         })
       });
 
@@ -470,6 +501,51 @@ function App() {
                                 </option>
                               ))}
                         </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label>选择对话场景</label>
+                        <select
+                          value={selectedScene}
+                          onChange={(e) => setSelectedScene(e.target.value)}
+                          disabled={!selectedCharacter}
+                        >
+                          <option value="">不指定场景</option>
+                          {sceneOptions.map((place) => (
+                            <option key={place.id} value={place.name}>{place.name}</option>
+                          ))}
+                          <option value="custom">自定义场景</option>
+                        </select>
+                        {selectedScene === 'custom' && (
+                          <input
+                            type="text"
+                            placeholder="填写自定义场景"
+                            value={customScene}
+                            onChange={(e) => setCustomScene(e.target.value)}
+                          />
+                        )}
+                      </div>
+
+                      <div className="form-group">
+                        <label>对话类型</label>
+                        <select
+                          value={dialogueType}
+                          onChange={(e) => setDialogueType(e.target.value)}
+                        >
+                          <option value="闲聊">闲聊</option>
+                          <option value="回忆询问">回忆询问</option>
+                          <option value="情感安慰">情感安慰</option>
+                          <option value="求助建议">求助建议</option>
+                          <option value="自定义">自定义</option>
+                        </select>
+                        {dialogueType === '自定义' && (
+                          <input
+                            type="text"
+                            placeholder="自定义对话类型"
+                            value={customDialogueType}
+                            onChange={(e) => setCustomDialogueType(e.target.value)}
+                          />
+                        )}
                       </div>
                       {/* --- */}
 

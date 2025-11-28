@@ -6,6 +6,7 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from typing import Dict, List, Any, Optional, AsyncGenerator
 
 from app.core.llm.openai_client import CharacterLLM
@@ -17,6 +18,8 @@ class ResponseFlow:
                 graph_store: Optional[GraphStore] = None):
         self.character_llm = character_llm or CharacterLLM()
         self.graph_store = graph_store or GraphStore()
+        self.prefetched_memories: Dict[str, List[Dict[str, Any]]] = {}
+        self.prefetch_tasks: Dict[str, asyncio.Task] = {}
         self.memory_type_rules = {
             "education": "需体现学习方式与思维模式的关联（如记忆中“如何学习”影响“现在如何思考”）",
             "work": "需包含职业技能与价值观的互动（如记忆中“解决问题的技能”反映“职业价值观”）",
@@ -29,7 +32,7 @@ class ResponseFlow:
         }
     
     # --- 新增：通用的角色上下文构建函数 ---
-    def _build_user_context(self, character_data: Dict[str, Any], user_character_data: Optional[Dict[str, Any]]) -> str:
+    def _build_user_context(self, character_data: Dict[str, Any], user_character_data: Optional[Dict[str, Any]], scene: Optional[str] = None, dialogue_type: Optional[str] = None) -> str:
         """
         为所有响应阶段构建通用的用户角色上下文。
         """
@@ -60,6 +63,9 @@ class ResponseFlow:
             user_extraversion = user_personality.get('extraversion', 50)
             user_conscientiousness = user_personality.get('conscientiousness', 50)
 
+            scene_hint = f"当前对话场景：{scene}。" if scene else "当前对话场景未知。"
+            dialogue_hint = f"对话类型：{dialogue_type or '闲聊'}。"
+
             return f"""
             **你（{character_data.get('name')}）的信息：**
             - 年龄：{character_data.get('age')}岁
@@ -78,12 +84,18 @@ class ResponseFlow:
             - 关系类型：{relationship_type}
             - 关系描述：{relationship_description}
 
+            {scene_hint}
+            {dialogue_hint}
+
             **重要提示：**
             - **称呼分析**：请根据以上所有信息（你的性格、对方的性格、对方的背景、你们的关系描述）来判断你应该如何称呼对方。例如，对方如果是长辈（如父母、叔叔阿姨），你可能需要称呼“妈妈”、“爸爸”、“叔叔”、“阿姨”等；如果是同辈朋友，可能是名字或昵称；如果关系疏远或正式，可能是姓氏+职务。不要直接使用对方的名字（除非关系非常亲密或对方要求），也不要生硬地使用关系词（如“母亲大人”），要自然。
             - **语气与措辞**：你的回应语气、用词、态度应与你的性格特质（特别是神经质、宜人性、开放性、外向性）和价值观一致。例如，高神经质可能更敏感、谨慎；低宜人性可能更直接、坚持自我边界；高开放性可能更愿意尝试新表达；高外向性可能更主动、热情。
             - **互动模式**：参考你的社交模式（{character_data.get('social_pattern')}）和对方的社交模式（{user_character_data.get('social_pattern', '未知')}）来调整互动方式。
             """
         else:
+            scene_hint = f"当前对话场景：{scene}。" if scene else "当前对话场景未知。"
+            dialogue_hint = f"对话类型：{dialogue_type or '闲聊'}。"
+
             return f"""
             **你（{character_data.get('name')}）的信息：**
             - 年龄：{character_data.get('age')}岁
@@ -92,12 +104,16 @@ class ResponseFlow:
             - 背景故事：{character_data.get('background', '未知')}
 
             你正在与一位普通用户对话，对方没有提供具体身份信息。
+            {scene_hint}
+            {dialogue_hint}
             """
     # ---
-    async def _needs_memory(self, 
-                          character_data: Dict[str, Any], 
-                          user_input: str, 
-                          user_character_data: Optional[Dict[str, Any]] = None # 确保接收此参数
+    async def _needs_memory(self,
+                          character_data: Dict[str, Any],
+                          user_input: str,
+                          user_character_data: Optional[Dict[str, Any]] = None, # 确保接收此参数
+                          scene: Optional[str] = None,
+                          dialogue_type: Optional[str] = None
                           ) -> bool:
         # 构建与用户扮演角色相关的上下文
         context_info = ""
@@ -109,11 +125,16 @@ class ResponseFlow:
             user_rel = user_character_data.get('relationship_to_main', '未知') # 需要根据实际情况获取
             context_info = f"对话对象是 {user_name} ({user_occ})，与 {character_data.get('name')} 的关系可能是 {user_rel}。"
         # ... 其余逻辑类似，但Prompt中可以包含 context_info
+        scene_hint = f"当前场景：{scene}。" if scene else "当前场景未知。"
+        type_hint = f"对话类型：{dialogue_type or '闲聊'}。"
+
         system_prompt = f"""
         你是对话意图分析师，需判断用户问题是否需要{character_data.get('name', '角色')}调用「个人记忆片段」回答。
 
         角色基础：{character_data.get('name')}，{character_data.get('age')}岁，{character_data.get('occupation')}。
         {context_info} # 添加上下文信息
+        {scene_hint}
+        {type_hint}
 
         需要调用记忆片段的情况：问题涉及角色的「过往经历、具体事件、形成的习惯、特定场景的感受、与他人的互动」（如"你之前遇到过XX情况吗？""你为什么有XX习惯？""你和XX之间发生过什么？"）。
         不需要调用记忆片段的情况：问题是寒暄问候、询问当前人设（如"你喜欢什么爱好？"）、通用知识（如"今天天气如何？"）。
@@ -124,22 +145,44 @@ class ResponseFlow:
         
         result = await self.character_llm.client.generate_response(system_prompt, user_prompt)
         return result.strip().upper() == "YES"
+
+    async def _background_memory_prefetch(self, character_id: str, query: str, scene: Optional[str] = None) -> List[Dict[str, Any]]:
+        """使用 Neo4jVector 在后台预取记忆，供下一轮对话使用。"""
+        if not self.graph_store:
+            return []
+
+        text = f"{query} {scene or ''}".strip()
+        loop = asyncio.get_running_loop()
+        try:
+            results = await loop.run_in_executor(None, self.graph_store.vector_search_impressions, text, character_id, 6)
+            self.prefetched_memories[character_id] = results
+            return results
+        except Exception as e:
+            print(f"后台预取失败: {e}")
+            return []
     
     async def process(self,
                      character_id: str,
                      character_data: Dict[str, Any],
                      user_input: str,
                      conversation_history: List[Dict[str, str]] = None,
-                     user_character_data: Optional[Dict[str, Any]] = None # 确保接收此参数
+                     user_character_data: Optional[Dict[str, Any]] = None, # 确保接收此参数
+                     scene: Optional[str] = None,
+                     dialogue_type: Optional[str] = None
                      ) -> AsyncGenerator[Dict[str, Any], None]:
         start_time = time.time()
+        # --- 启动后台记忆预取 ---
+        prefetch_task = None
+        if self.graph_store:
+            prefetch_task = asyncio.create_task(self._background_memory_prefetch(character_id, user_input, scene))
+
         # --- 修复：传递 user_character_data ---
-        needs_memory = await self._needs_memory(character_data, user_input, user_character_data)
+        needs_memory = await self._needs_memory(character_data, user_input, user_character_data, scene, dialogue_type)
         # ---
 
         if not needs_memory:
             # --- 修复：传递 user_character_data ---
-            direct_resp = await self._generate_direct_response(character_data, user_input, conversation_history, user_character_data)
+            direct_resp = await self._generate_direct_response(character_data, user_input, conversation_history, user_character_data, scene, dialogue_type)
             # ---
             yield {
                 "type": "direct",
@@ -149,7 +192,7 @@ class ResponseFlow:
             return
 
         # --- 修复：传递 user_character_data ---
-        immediate_task = asyncio.create_task(self._generate_immediate_response(character_data, user_input, conversation_history, user_character_data))
+        immediate_task = asyncio.create_task(self._generate_immediate_response(character_data, user_input, conversation_history, user_character_data, scene, dialogue_type))
         # ---
         # --- 移除：memory_task = asyncio.create_task(self._retrieve_relevant_memories_from_graph(character_id, user_input))
         # ---
@@ -167,7 +210,7 @@ class ResponseFlow:
         # --- 修改：在 _generate_supplementary_response 内部进行 GraphRAG 检索 ---
         # 不再传递预先获取的 memories，而是传递 character_id 和 graph_store 实例
         supplementary_resp = await self._generate_supplementary_response(
-            character_data, user_input, immediate_resp, character_id, conversation_history, user_character_data # 传递 character_id, conversation_history, user_character_data
+            character_data, user_input, immediate_resp, character_id, conversation_history, user_character_data, scene, dialogue_type, prefetch_task # 传递 character_id, conversation_history, user_character_data
         )
         # ---
         yield {
@@ -183,14 +226,30 @@ class ResponseFlow:
                                              immediate_response: str,
                                              character_id: str,
                                              conversation_history: List[Dict[str, str]] = None,
-                                             user_character_data: Optional[Dict[str, Any]] = None
+                                             user_character_data: Optional[Dict[str, Any]] = None,
+                                             scene: Optional[str] = None,
+                                             dialogue_type: Optional[str] = None,
+                                             prefetch_task: Optional[asyncio.Task] = None
                                              ) -> Dict[str, Any]:
         print("\n" + "="*60)
         print(f"📝 生成补充响应...")
         print(f"   主角色: {character_data.get('name')}")
         print(f"   用户扮演角色: {user_character_data.get('name') if user_character_data else '默认用户'}")
         print(f"   用户输入: {user_input}")
+        if scene:
+            print(f"   对话场景: {scene}")
+        if dialogue_type:
+            print(f"   对话类型: {dialogue_type}")
         print("="*60)
+
+        prefetched = []
+        if prefetch_task:
+            try:
+                prefetched = await prefetch_task
+            except Exception as e:
+                print(f"预取任务出错: {e}")
+        elif character_id in self.prefetched_memories:
+            prefetched = self.prefetched_memories.get(character_id, [])
 
         # --- GraphRAG 检索开始 (只检索印象节点) ---
         print("🔍  开始从 Neo4j 图谱进行 GraphRAG 检索 (仅印象节点)...")
@@ -395,69 +454,23 @@ class ResponseFlow:
         print("="*60)
         # --- GraphRAG 检索结束 ---
 
+        if prefetched:
+            vector_impressions = []
+            for item in prefetched:
+                vector_impressions.append({
+                    "impression": {
+                        "impression_content": item.get("content", ""),
+                        "app_id": item.get("app_id", str(uuid.uuid4()))
+                    },
+                    "event": {},
+                    "strength": item.get("score", 70),
+                    "source": "vector_prefetch"
+                })
+            all_raw_impressions = vector_impressions or all_raw_impressions
+
         # --- 构建与用户角色相关的上下文 (增强版) ---
         # ... (保持 user_context 逻辑不变) ...
-        user_context = ""
-        if user_character_data:
-            user_name = user_character_data.get('name')
-            user_occ = user_character_data.get('occupation')
-            user_age = user_character_data.get('age')
-            user_gender = user_character_data.get('gender')
-            user_background = user_character_data.get('background', '未知') # 用户角色的背景故事
-            # 主角色的背景故事
-            main_background = character_data.get('background', '未知')
-            # 从图谱获取关系信息
-            user_relationship_info = self.graph_store.get_relationship_between_characters(character_data.get('id'), user_character_data.get('id')) if self.graph_store else None
-            relationship_type = user_relationship_info.get('type', 'UNKNOWN') if user_relationship_info else 'UNKNOWN'
-            relationship_description = user_relationship_info.get('description', '未知') if user_relationship_info else 'UNKNOWN'
-            # 主角色性格
-            main_personality = character_data.get('personality', {})
-            main_neuroticism = main_personality.get('neuroticism', 50)
-            main_agreeableness = main_personality.get('agreeableness', 50)
-            main_openness = main_personality.get('openness', 50)
-            main_extraversion = main_personality.get('extraversion', 50)
-            main_conscientiousness = main_personality.get('conscientiousness', 50)
-            # 用户角色性格
-            user_personality = user_character_data.get('personality', {})
-            user_neuroticism = user_personality.get('neuroticism', 50)
-            user_agreeableness = user_personality.get('agreeableness', 50)
-            user_openness = user_personality.get('openness', 50)
-            user_extraversion = user_personality.get('extraversion', 50)
-            user_conscientiousness = user_personality.get('conscientiousness', 50)
-
-            user_context = f"""
-            **你（{character_data.get('name')}）的信息：**
-            - 年龄：{character_data.get('age')}岁
-            - 职业：{character_data.get('occupation')}
-            - 性格特质 (OCEAN)：开放性 {main_openness}/100, 尽责性 {main_conscientiousness}/100, 外向性 {main_extraversion}/100, 宜人性 {main_agreeableness}/100, 神经质 {main_neuroticism}/100
-            - 背景故事：{main_background}
-
-            **你正在与 {user_name} 对话，其信息如下：**
-            - 年龄：{user_age}岁
-            - 性别：{user_gender}
-            - 职业：{user_occ}
-            - 性格特质 (OCEAN)：开放性 {user_openness}/100, 尽责性 {user_conscientiousness}/100, 外向性 {user_extraversion}/100, 宜人性 {user_agreeableness}/100, 神经质 {user_neuroticism}/100
-            - 背景故事：{user_background}
-
-            **你们之间的关系：**
-            - 关系类型：{relationship_type}
-            - 关系描述：{relationship_description}
-
-            **重要提示：**
-            - **称呼分析**：请根据以上所有信息（你的性格、对方的性格、对方的背景、你们的关系描述）来判断你应该如何称呼对方。例如，对方如果是长辈（如父母、叔叔阿姨），你可能需要称呼“妈妈”、“爸爸”、“叔叔”、“阿姨”等；如果是同辈朋友，可能是名字或昵称；如果关系疏远或正式，可能是姓氏+职务。不要直接使用对方的名字（除非关系非常亲密或对方要求），也不要生硬地使用关系词（如“母亲大人”），要自然。
-            - **语气与措辞**：你的回应语气、用词、态度应与你的性格特质（特别是神经质、宜人性、开放性、外向性）和价值观一致。例如，高神经质可能更敏感、谨慎；低宜人性可能更直接、坚持自我边界；高开放性可能更愿意尝试新表达；高外向性可能更主动、热情。
-            - **互动模式**：参考你的社交模式（{character_data.get('social_pattern')}）和对方的社交模式（{user_character_data.get('social_pattern', '未知')}）来调整互动方式。
-            """
-        else:
-            user_context = f"""
-            **你（{character_data.get('name')}）的信息：**
-            - 年龄：{character_data.get('age')}岁
-            - 职业：{character_data.get('occupation')}
-            - 性格特质 (OCEAN)：开放性 {character_data.get('personality', {}).get('openness', 50)}/100, 尽责性 {character_data.get('personality', {}).get('conscientiousness', 50)}/100, 外向性 {character_data.get('personality', {}).get('extraversion', 50)}/100, 宜人性 {character_data.get('personality', {}).get('agreeableness', 50)}/100, 神经质 {character_data.get('personality', {}).get('neuroticism', 50)}/100
-            - 背景故事：{character_data.get('background', '未知')}
-
-            你正在与一位普通用户对话，对方没有提供具体身份信息。
-            """
+        user_context = self._build_user_context(character_data, user_character_data, scene, dialogue_type)
         # ---
 
         # --- 格式化检索到的印象 (作为回忆) ---
@@ -497,6 +510,7 @@ class ResponseFlow:
 
         **当前对话上下文：**
         {user_context}
+        - 场景：{scene or '未指定'} | 对话类型：{dialogue_type or '闲聊'}
 
         **你回忆起的相关片段（这些是经过时间、性格等过滤后的印象，而非完整事件）：**
         {''.join(formatted_impressions) if formatted_impressions else "你对此没有特别清晰的回忆。"}
@@ -583,10 +597,12 @@ class ResponseFlow:
                                          character_data: Dict[str, Any],
                                          user_input: str,
                                          conversation_history: List[Dict[str, str]] = None,
-                                         user_character_data: Optional[Dict[str, Any]] = None # 确保接收此参数
+                                         user_character_data: Optional[Dict[str, Any]] = None, # 确保接收此参数
+                                         scene: Optional[str] = None,
+                                         dialogue_type: Optional[str] = None
                                          ) -> str:
         # 使用通用的上下文构建函数
-        user_context = self._build_user_context(character_data, user_character_data)
+        user_context = self._build_user_context(character_data, user_character_data, scene, dialogue_type)
 
         simplified_system_prompt = f"""
         你是{character_data.get('name')}。{user_context}
@@ -601,10 +617,12 @@ class ResponseFlow:
                                       character_data: Dict[str, Any],
                                       user_input: str,
                                       conversation_history: List[Dict[str, str]] = None,
-                                      user_character_data: Optional[Dict[str, Any]] = None # 确保接收此参数
+                                      user_character_data: Optional[Dict[str, Any]] = None, # 确保接收此参数
+                                      scene: Optional[str] = None,
+                                      dialogue_type: Optional[str] = None
                                       ) -> str:
         # 使用通用的上下文构建函数
-        user_context = self._build_user_context(character_data, user_character_data)
+        user_context = self._build_user_context(character_data, user_character_data, scene, dialogue_type)
 
         simplified_system_prompt = f"""
         你是{character_data.get('name')}。{user_context}
@@ -620,10 +638,12 @@ class ResponseFlow:
                                          character_data: Dict[str, Any],
                                          user_input: str,
                                          immediate_response: str,
-                                         user_character_data: Optional[Dict[str, Any]] = None # 确保接收此参数
+                                         user_character_data: Optional[Dict[str, Any]] = None, # 确保接收此参数
+                                         scene: Optional[str] = None,
+                                         dialogue_type: Optional[str] = None
                                          ) -> str:
         # 使用通用的上下文构建函数
-        user_context = self._build_user_context(character_data, user_character_data)
+        user_context = self._build_user_context(character_data, user_character_data, scene, dialogue_type)
 
         simplified_system_prompt = f"""
         你是{character_data.get('name')}，想不起{user_context}的相关记忆片段。请自然地回应（50-100字），符合语言风格：{character_data.get('language_style')}，可用生活习惯等解释（如"可能忘记了""不常回想"），不提"记忆""系统"等词，呼应之前回复：{immediate_response}。注意根据上下文使用合适的称呼。
