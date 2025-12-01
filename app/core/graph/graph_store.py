@@ -40,8 +40,8 @@ class GraphStore:
                  password: str = "zyh123456",
                  database: str = "neo4j",
                  embedding: Optional[Any] = None,
-                 index_name: str = "impressions", # 为印象节点指定索引
-                 text_node_property: str = "impression_content" # 指定用于向量化的节点属性
+                 index_name: str = "events",
+                 text_node_property: str = "event_content"
                  ):
         self.uri = uri
         self.user = user
@@ -52,61 +52,8 @@ class GraphStore:
         self.temp_csv_dir = "./temp_csv"
         os.makedirs(self.temp_csv_dir, exist_ok=True)
 
-        print("- 初始化 OpenAI Embeddings -")
-        try:
-            # 新版 langchain-openai 的正确写法（base_url 需要显式写出）
-            self.embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small",
-                api_key=os.environ.get("OPENAI_API_KEY"),
-                base_url=os.environ.get("OPENAI_BASE_URL")  # 关键：新版要求显式写出 base_url
-            )
-            print("✅ OpenAI Embeddings 初始化成功。")
-        except Exception as e:
-            print(f"❌ OpenAI Embeddings 初始化失败: {e}")
-            import traceback as tb
-            tb.print_exc()
-            self.embeddings = None
-            self.neo4j_vector_impressions = None
-
-
-        # --- 初始化 Neo4jVector 实例 ---
-        # 确保 embeddings 成功初始化后才尝试初始化 Neo4jVector
-        if self.embeddings is not None:
-            try:
-                dim = len(self.embeddings.embed_query("ping"))
-            except Exception:
-                dim = 1536
-
-            try:
-                self._ensure_vector_index(
-                    index_name="impression_embeddings",
-                    label="Impression",
-                    vector_prop="impression_embedding",
-                    dimension=dim,
-                )
-                self.neo4j_vector_impressions = Neo4jVector.from_existing_index(
-                    embedding=self.embeddings, # 现在 self.embeddings 已存在且配置正确
-                    url=self.uri,
-                    username=self.user,
-                    password=self.password,
-                    database=self.database,
-                    embedding_node_property="impression_embedding", # 这个属性名需要在导入时创建
-                    text_node_property=self.text_node_property,
-                    index_name="impression_embeddings", # 确保索引名称正确且维度匹配
-                    search_type="vector",
-                    node_label="Impression",
-                )
-                print("✅ Neo4jVector (impressions) 初始化成功。")
-            except Exception as e:
-                print(f"❌ Neo4jVector (impressions) 初始化失败: {e}")
-                print("   这可能导致语义搜索功能不可用，但应用将继续启动。")
-                import traceback as tb
-                tb.print_exc() # 打印完整堆栈跟踪
-                self.neo4j_vector_impressions = None
-        else:
-            print("⚠️  由于 Embeddings 初始化失败，跳过 Neo4jVector 初始化。")
-            self.neo4j_vector_impressions = None
-        print("--- Neo4jVector 实例初始化完成 ---")
+        self.embeddings = embedding or OpenAIEmbeddings()
+        self.neo4j_vector_impressions = None
         # 使用通过挂载卷共享的目录
         self.temp_csv_dir = "/zhouyuhao/zhouyuhao_data_new/import"
         os.makedirs(self.temp_csv_dir, exist_ok=True)
@@ -135,6 +82,16 @@ class GraphStore:
             import traceback
             traceback.print_exc()
             raise e
+
+        # 事件、对话、地点、时间、角色、主题的向量索引
+        self.vector_index_map = {
+            "Event": {"index": "vec_event", "text_prop": "event_content", "vector_prop": "embedding"},
+            "Dialogue": {"index": "vec_dialogue", "text_prop": "content", "vector_prop": "embedding"},
+            "Place": {"index": "vec_place", "text_prop": "name", "vector_prop": "embedding"},
+            "Time": {"index": "vec_time", "text_prop": "label", "vector_prop": "embedding"},
+            "Character": {"index": "vec_character", "text_prop": "name", "vector_prop": "embedding"},
+            "Topic": {"index": "vec_topic", "text_prop": "name", "vector_prop": "embedding"},
+        }
 
     def _ensure_vector_index(self, index_name: str, label: str, vector_prop: str, dimension: int) -> None:
         """确保指定的向量索引存在，不存在则创建。"""
@@ -175,25 +132,8 @@ class GraphStore:
             session.run(
                 """
                 MATCH (c:Character)
-                WHERE NOT exists(c.relationship_to_protagonist)
+                WHERE c.relationship_to_protagonist IS NULL
                 SET c.relationship_to_protagonist = 'UNKNOWN'
-                """
-            )
-
-            # 印象内容、向量字段、强度
-            session.run(
-                """
-                MATCH (i:Impression)
-                WHERE NOT exists(i.impression_content)
-                SET i.impression_content = coalesce(i.content, '')
-                """
-            )
-
-            session.run(
-                """
-                MATCH (i:Impression)
-                WHERE NOT exists(i.strength)
-                SET i.strength = 50
                 """
             )
 
@@ -201,7 +141,7 @@ class GraphStore:
             session.run(
                 """
                 MATCH (e:Event)
-                WHERE NOT exists(e.event_content)
+                WHERE e.event_content IS NULL
                 SET e.event_content = coalesce(e.content, e.title, '')
                 """
             )
@@ -210,10 +150,10 @@ class GraphStore:
             session.run(
                 """
                 MERGE (_schema_c:SchemaAnchor {name:'__schema_char'})
-                MERGE (_schema_i:SchemaAnchor {name:'__schema_imp'})
                 MERGE (_schema_e:SchemaAnchor {name:'__schema_evt'})
-                MERGE (_schema_c)-[:HAS_IMPRESSION]->(_schema_i)
-                MERGE (_schema_i)-[:OF_EVENT]->(_schema_e)
+                MERGE (_schema_t:SchemaAnchor {name:'__schema_time'})
+                MERGE (_schema_c)-[:PROTAGONIST_EVENT]->(_schema_e)
+                MERGE (_schema_e)-[:EVENT_TIME]->(_schema_t)
                 """
             )
 
@@ -818,202 +758,42 @@ class GraphStore:
                 print(f"获取地点失败: {e}")
                 return []
 
-    def vector_search_impressions(self, query: str, character_id: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """基于 Neo4jVector 的印象检索，失败时返回空列表。"""
-        if not self.neo4j_vector_impressions:
+    def vector_search(self, label: str, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        config = self.vector_index_map.get(label)
+        if not config:
+            log_warning(f"未配置 {label} 的向量索引")
             return []
 
         try:
-            try:
-                docs = self.neo4j_vector_impressions.similarity_search(
-                    query,
-                    k=top_k,
-                    filter={"character_id": character_id}
-                )
-            except Exception:
-                docs = self.neo4j_vector_impressions.similarity_search(query, k=top_k)
+            self._ensure_vector_index(
+                index_name=config["index"],
+                label=label,
+                vector_prop=config["vector_prop"],
+                dimension=1536,
+            )
+            vector_store = Neo4jVector.from_existing_index(
+                embedding=self.embeddings,
+                url=self.uri,
+                username=self.user,
+                password=self.password,
+                index_name=config["index"],
+                text_node_property=config["text_prop"],
+            )
+            docs = vector_store.similarity_search(query, k=top_k)
             results = []
-            for doc in docs:
-                payload = doc.metadata if hasattr(doc, "metadata") else {}
-                payload["content"] = doc.page_content
-                results.append(payload)
+            for d in docs:
+                meta = d.metadata
+                results.append({
+                    "app_id": meta.get("app_id") or meta.get("id"),
+                    "content": d.page_content,
+                    "score": meta.get("score", 70),
+                    "label": label,
+                })
             return results
         except Exception as e:
-            print(f"向量检索失败: {e}")
+            log_warning(f"{label} 向量搜索失败: {e}")
             return []
 
-    # Neo4jVector helper for semantic search (兼容旧调用名称)
-    def semantic_search_impressions(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """语义检索印象的别名包装，避免历史调用报错。"""
-        return self.vector_search_impressions(query=query, character_id="", top_k=k)
-
-    def get_character_impressions(self, character_id: str) -> List[Dict[str, Any]]:
-        """
-        获取指定角色的所有印象及其关联的事件。
-        """
-        with self.driver.session(database=self.database) as session:
-            try:
-                result = session.run(
-                    """
-                    MATCH (c:Character {app_id: $char_id})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
-                    RETURN i, e
-                    """,
-                    char_id=character_id
-                )
-
-                impressions = []
-                for record in result:
-                    impression_node = record["i"]
-                    event_node = record["e"]
-                    impression_props = dict(impression_node)
-                    event_props = dict(event_node)
-
-                    # 合并印象和事件信息
-                    combined = {
-                        "impression": impression_props,
-                        "event": event_props,
-                        "event_app_id": event_props.get("app_id"),
-                        "impression_app_id": impression_props.get("app_id")
-                    }
-
-                    # 解析JSON字段
-                    for key, value in combined["impression"].items():
-                        if isinstance(value, str):
-                            try:
-                                combined["impression"][key] = json.loads(value)
-                            except (json.JSONDecodeError, TypeError):
-                                pass
-                    
-                    for key, value in combined["event"].items():
-                        if isinstance(value, str):
-                            try:
-                                combined["event"][key] = json.loads(value)
-                            except (json.JSONDecodeError, TypeError):
-                                pass
-
-                    impressions.append(combined)
-
-                print(f"--- 获取到 {len(impressions)} 条角色 {character_id} 的印象 ---")
-                return impressions
-            except Exception as e:
-                print(f"获取角色 {character_id} 的印象失败: {e}")
-                return []
-
-    def get_event_details(self, event_id: str) -> List[Dict[str, Any]]:
-        """
-        获取事件的所有细节节点（物品、动作、对话等）
-        """
-        with self.driver.session(database=self.database) as session:
-            try:
-                result = session.run(
-                    """
-                    MATCH (e:Event {app_id: $event_id})-[:HAS_DETAIL]->(d)
-                    RETURN d
-                    """,
-                    event_id=event_id
-                )
-
-                details = []
-                for record in result:
-                    detail_node = record["d"]
-                    detail_props = dict(detail_node)
-                    
-                    # 解析JSON字段
-                    for key, value in detail_props.items():
-                        if isinstance(value, str):
-                            try:
-                                detail_props[key] = json.loads(value)
-                            except (json.JSONDecodeError, TypeError):
-                                pass
-                    
-                    details.append(detail_props)
-
-                print(f"--- 获取到 {len(details)} 个事件 {event_id} 的细节 ---")
-                return details
-            except Exception as e:
-                print(f"获取事件 {event_id} 的细节失败: {e}")
-                return []
-
-    def delete_character_graph(self, character_id: str) -> bool:
-        """
-        删除指定角色及其关联的图谱数据（印象、关系）。
-        保留事件和细节节点，因为它们可能与其他角色相关。
-        """
-        with self.driver.session(database=self.database) as session:
-            try:
-                # 1. 删除角色 -> 印象的关系和印象节点
-                session.run(
-                    """
-                    MATCH (c:Character {app_id: $char_id})-[r:HAS_IMPRESSION]->(i:Impression)
-                    DELETE r, i
-                    """,
-                    char_id=character_id
-                )
-                # 2. 删除角色本身
-                session.run(
-                    """
-                    MATCH (c:Character {app_id: $char_id})
-                    DELETE c
-                    """,
-                    char_id=character_id
-                )
-                print(f"--- 角色 {character_id} 及其关联的印象节点已删除 ---")
-                return True
-            except Exception as e:
-                print(f"删除角色 {character_id} 的图谱数据失败: {e}")
-                return False
-
-    def update_impression_over_time(self, impression_app_id: str) -> bool:
-        """
-        模拟印象随时间自然变化（淡忘）。
-        根据当前强度应用不同的衰减因子
-        """
-        with self.driver.session(database=self.database) as session:
-            try:
-                # 获取当前印象内容和强度
-                result = session.run(
-                    """
-                    MATCH (i:Impression {app_id: $impression_app_id})
-                    RETURN i.impression_content AS current_content, i.content AS content, i.strength AS current_strength
-                    """,
-                    impression_app_id=impression_app_id
-                ).single()
-
-                if not result:
-                    print(f"错误：未找到印象 ID 为 {impression_app_id} 的节点。")
-                    return False
-
-                current_content = result["content"] or result["current_content"] or ""
-                current_strength = result["current_strength"] or 100
-
-                # 根据当前强度应用不同的衰减因子
-                if current_strength < 30:
-                    decay_factor = 0.8  # 弱记忆衰减更快
-                elif current_strength < 70:
-                    decay_factor = 0.9  # 中等记忆正常衰减
-                else:
-                    decay_factor = 0.95  # 强记忆衰减较慢
-
-                # 计算新的强度和内容
-                new_strength = max(5, int(current_strength * decay_factor))
-                content_length = max(5, int(len(current_content) * decay_factor))
-                new_content = current_content[:content_length] + ("..." if len(current_content) > content_length else "")
-
-                session.run(
-                    """
-                    MATCH (i:Impression {app_id: $impression_app_id})
-                    SET i.content = $new_content, i.strength = $new_strength, i.last_updated = $timestamp
-                    """,
-                    impression_app_id=impression_app_id,
-                    new_content=new_content,
-                    new_strength=new_strength,
-                    timestamp=datetime.now().isoformat()
-                )
-                print(f"--- 印象 {impression_app_id} 已更新 (强度: {new_strength}, 内容长度: {len(new_content)}) ---")
-                return True
-            except Exception as e:
-                print(f"更新印象 {impression_app_id} 失败: {e}")
-                return False
 
     def save_entities_and_relationships_to_csv(self,
                                             main_character: Dict[str, Any], # 主角色
@@ -1083,6 +863,7 @@ class GraphStore:
                 participants = memory.get("participants", []) or []
                 raw_dialogue = memory.get("dialogue_content", [])
                 normalized_dialogues = self._normalize_dialogues(raw_dialogue)
+                place_id = f"place_{hash(memory.get('scene'))}" if memory.get("scene") else None
 
                 _write_node({
                     "node_id:ID": event_id,
@@ -1121,7 +902,7 @@ class GraphStore:
 
                 if memory.get("scene"):
                     _write_node({
-                        "node_id:ID": f"{event_id}_location",
+                        "node_id:ID": place_id,
                         "label:LABEL": "Place",
                         "name": memory.get("scene"),
                         "role": "location",
@@ -1223,7 +1004,7 @@ class GraphStore:
                 if memory.get("scene"):
                     _write_rel({
                         "start_id:START_ID": event_id,
-                        "end_id:END_ID": f"{event_id}_location",
+                        "end_id:END_ID": place_id,
                         "type:TYPE": "EVENT_LOCATION",
                         "description": "事件发生地点"
                     })
