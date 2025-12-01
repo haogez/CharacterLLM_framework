@@ -286,25 +286,29 @@ class ResponseFlow:
         if not primary_response_future.done():
             primary_response_future.set_result(primary_resp)
 
-        memory_result = await memory_task
+        primary_payload = {
+            "type": "dialogue",
+            "content": primary_resp,
+            "memories": [],
+            "timestamp": round(time.time() - start_time, 2)
+        }
+        yield primary_payload
 
-        combined_content = primary_resp
-        combined_memories: List[Dict[str, Any]] = []
+        memory_result = await memory_task
 
         if memory_result and memory_result.get("action") == "send":
             payload = memory_result["payload"]
-            combined_content = self._merge_content(combined_content, payload.get("content", ""))
-            combined_memories.extend(payload.get("memories", []))
+            supplement_content = payload.get("content", "")
+            if supplement_content.strip():
+                supplement_payload = {
+                    "type": "dialogue",
+                    "content": supplement_content,
+                    "memories": payload.get("memories", []),
+                    "timestamp": round(time.time() - start_time, 2)
+                }
+                yield supplement_payload
         elif memory_result and memory_result.get("action") == "defer":
             self._store_pending_supplement(character_id, memory_result["payload"])
-
-        response_payload = {
-            "type": "dialogue",
-            "content": combined_content,
-            "memories": combined_memories,
-            "timestamp": round(time.time() - start_time, 2)
-        }
-        yield response_payload
 
     async def _memory_thread(
         self,
@@ -422,6 +426,20 @@ class ResponseFlow:
                     keywords = re.findall(r'[\u4e00-\u9fff\w]+', user_input)
                     common_words = {"你", "我", "他", "她", "它", "是", "的", "了", "在", "有", "和", "跟", "与", "吗", "呢", "吧", "啊", "呀", "还", "就", "才", "又", "再", "更", "最", "很", "挺", "太", "非常", "特别", "十分", "有点", "稍微", "几乎", "几乎不", "完全", "全部", "都", "全部", "所有", "每个", "一些", "几个", "某些", "别的", "其他", "另外", "这", "那", "这些", "那些", "这个", "那个", "这里", "那里", "这儿", "那儿", "现在", "然后", "如果", "因为", "所以", "但是", "然而", "虽然", "尽管", "为了", "关于", "对于", "关于", "把", "被", "让", "叫", "请", "让", "使", "帮", "给", "为", "对", "向", "往", "朝", "用", "以", "比", "跟", "和", "同", "与", "及", "以及", "或", "或者", "还是"}
                     keywords = [kw.lower() for kw in keywords if len(kw) > 1 and kw not in common_words]
+                    protagonist_name = (character_data.get("name") or "").lower()
+                    user_name = (user_character_data.get("name") if user_character_data else "").lower()
+                    def _is_protagonist_name(token: str) -> bool:
+                        return token == protagonist_name or (protagonist_name and token in protagonist_name) or (protagonist_name and protagonist_name in token)
+
+                    def _is_user_name(token: str) -> bool:
+                        return token == user_name or (user_name and token in user_name) or (user_name and user_name in token)
+
+                    filtered_keywords = [kw for kw in keywords if not (_is_protagonist_name(kw) or _is_user_name(kw))]
+                    if not filtered_keywords:
+                        log_debug("关键词仅包含角色姓名，跳过关键词查询", indent=2)
+                        keywords = []
+                    else:
+                        keywords = filtered_keywords
                     log_debug(f"提取关键词: {keywords}", indent=2)
 
                     raw_impressions_keyword = []
@@ -492,14 +510,26 @@ class ResponseFlow:
 
                     # --- 步骤 3: 向量搜索 (语义搜索) ---
                     log_debug("尝试向量搜索 (语义搜索)...", indent=1)
-                    # 3.1 搜索与查询语义相关的 Event
-                    # semantic_results_events = self.graph_store.semantic_search_events(user_input, k=5)
-                    # 3.2 搜索与查询语义相关的 Impression（已停用，返回空列表）
-                    semantic_results_impressions = []
-
-                    # 向量搜索依赖 Impression 节点，已禁用
                     raw_impressions_semantic = []
-                    log_info(f"向量搜索返回 {len(raw_impressions_semantic)} 条记录 (Impression 向量检索已关闭)", indent=2)
+                    vector_results_events = self.graph_store.vector_search("Event", user_input, top_k=5)
+                    log_info(f"向量搜索返回 {len(vector_results_events)} 条记录", indent=2)
+                    for idx, vec in enumerate(vector_results_events, 1):
+                        log_debug(
+                            f"向量结果{idx}: score={vec.get('score')} | app_id={vec.get('app_id')} | 内容预览={str(vec.get('content', ''))[:30]}",
+                            indent=2,
+                        )
+                        raw_impressions_semantic.append({
+                            "impression": {
+                                "impression_content": vec.get("content", ""),
+                                "app_id": vec.get("app_id")
+                            },
+                            "event": {
+                                "event_content": vec.get("content", ""),
+                                "app_id": vec.get("app_id")
+                            },
+                            "strength": vec.get("score", 70),
+                            "source": "vector_event",
+                        })
 
 
                     # --- 步骤 4: 传统语义搜索 (使用 textdistance) ---
