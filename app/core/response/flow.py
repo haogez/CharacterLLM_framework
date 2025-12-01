@@ -435,7 +435,7 @@ class ResponseFlow:
                             params[f"kw{i}"] = kw
                         where_clause_keyword = " OR ".join(or_conditions_impression)
                         query_keyword = f"""
-                        MATCH (c:Character {{app_id: $character_id}})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
+                        MATCH (c:Character {{app_id: $character_id}})-->(i:Impression)-->(e:Event)
                         WHERE {where_clause_keyword}
                         RETURN i, e, i.strength AS strength, 'keyword' AS source
                         ORDER BY strength DESC
@@ -473,7 +473,7 @@ class ResponseFlow:
                              params_loc[f"loc_kw{i}"] = loc_kw
                          where_clause_location = " OR ".join(or_conditions_location)
                          query_structured = f"""
-                         MATCH (c:Character {{app_id: $character_id}})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
+                         MATCH (c:Character {{app_id: $character_id}})-->(i:Impression)-->(e:Event)
                          WHERE {where_clause_location}
                          RETURN i, e, i.strength AS strength, 'structured_location' AS source
                          ORDER BY strength DESC
@@ -520,7 +520,7 @@ class ResponseFlow:
                     # --- 步骤 4: 传统语义搜索 (使用 textdistance) ---
                     log_debug("尝试传统语义搜索 (基于textdistance)...", indent=1)
                     query_for_semantic = """
-                    MATCH (c:Character {app_id: $character_id})-[:HAS_IMPRESSION]->(i:Impression)-[:OF_EVENT]->(e:Event)
+                    MATCH (c:Character {app_id: $character_id})-->(i:Impression)-->(e:Event)
                     WHERE i.strength > 30 // 选择强度较高的印象进行语义比较
                     RETURN i, e, i.strength AS strength
                     ORDER BY strength DESC

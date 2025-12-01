@@ -125,6 +125,11 @@ class GraphStore:
             print(f"--- 成功连接到 Neo4j '{self.database}' ---")
             print(f"--- URI: {self.uri} ---")
             print("--- Neo4j 连接初始化完成 ---")
+            # 初始化后做一次轻量级的模式修复，避免因缺失属性或关系类型导致的查询警告
+            try:
+                self._backfill_core_schema()
+            except Exception as exc:
+                log_warning(f"Schema backfill skipped: {exc}")
         except Exception as e:
             print(f"连接 Neo4j 失败: {e}")
             import traceback
@@ -162,6 +167,57 @@ class GraphStore:
             except Exception as e:
                 print(f"⚠️  检查/创建向量索引 '{index_name}' 失败: {e}")
                 print("   语义检索可能不可用，请手动检查 Neo4j 配置。")
+
+    def _backfill_core_schema(self) -> None:
+        """回填核心属性并生成样板关系，避免 Neo4j 查询时的缺失警告。"""
+        with self.driver.session(database=self.database) as session:
+            # 角色的关系字段
+            session.run(
+                """
+                MATCH (c:Character)
+                WHERE NOT exists(c.relationship_to_protagonist)
+                SET c.relationship_to_protagonist = 'UNKNOWN'
+                """
+            )
+
+            # 印象内容、向量字段、强度
+            session.run(
+                """
+                MATCH (i:Impression)
+                WHERE NOT exists(i.impression_content)
+                SET i.impression_content = coalesce(i.content, '')
+                """
+            )
+
+            session.run(
+                """
+                MATCH (i:Impression)
+                WHERE NOT exists(i.strength)
+                SET i.strength = 50
+                """
+            )
+
+            # 事件内容
+            session.run(
+                """
+                MATCH (e:Event)
+                WHERE NOT exists(e.event_content)
+                SET e.event_content = coalesce(e.content, e.title, '')
+                """
+            )
+
+            # 建立模式锚点以注册关系类型（避免 relationship type does not exist 警告）
+            session.run(
+                """
+                MERGE (_schema_c:SchemaAnchor {name:'__schema_char'})
+                MERGE (_schema_i:SchemaAnchor {name:'__schema_imp'})
+                MERGE (_schema_e:SchemaAnchor {name:'__schema_evt'})
+                MERGE (_schema_c)-[:HAS_IMPRESSION]->(_schema_i)
+                MERGE (_schema_i)-[:OF_EVENT]->(_schema_e)
+                """
+            )
+
+            log_info("Schema backfill completed for core properties and anchor relations.")
 
     def close(self):
         if self.driver:
