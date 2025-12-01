@@ -20,6 +20,23 @@ from app.core.utils.log_utils import log_info, log_success, log_warning, log_err
 class StoryBasedMemoryGenerator:
     def __init__(self, character_llm: CharacterLLM):
         self.character_llm = character_llm
+
+    async def should_generate_scene(self, age: float, experience: str) -> (bool, str):
+        """使用 LLM 判断该年龄的经历是否需要生成结构化对话场景。"""
+        heuristic_negative = any(keyword in experience for keyword in ["未发生重大事件", "生活平稳", "平静度日", "没有特别的事"])
+        system_prompt = (
+            "你是剧情筛选助手，判断给定的年龄经历是否包含值得生成结构化对话的重大或情节性事件。"
+            "如果经历只是描述平稳或无事件，则返回 generate=false。请以 JSON 输出，例如 {\"generate\": false, \"reason\": \"生活平稳，无重大事件\"}."
+        )
+        user_prompt = f"年龄：{age}岁，经历描述：{experience}"
+        try:
+            resp = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
+            generate = bool(resp.get("generate", not heuristic_negative))
+            reason = resp.get("reason", "") or ("LLM 判定无需生成" if not generate else "LLM 判定需要生成")
+            return generate, reason
+        except Exception as exc:
+            log_warning(f"LLM 判断结构化对话生成需求失败，使用启发式: {exc}")
+            return not heuristic_negative, "启发式判断"
         self.age_ranges = [
             {"label": "婴幼儿期", "start": 0, "end": 2},
             {"label": "童年期", "start": 3, "end": 11},
@@ -456,6 +473,10 @@ class StoryBasedMemoryGenerator:
             if age > main_character.get('age', 100): # 跳过超出当前年龄的经历
                 continue
             for i, exp_desc in enumerate(experiences):
+                should_generate, skip_reason = await self.should_generate_scene(age, exp_desc)
+                if not should_generate:
+                    log_info(f" - 跳过 {age} 岁场景 {i+1}：{skip_reason}")
+                    continue
                 log_info(f" - 为 {age} 岁生成场景 {i+1}...")
 
                 # **修改：Prompt 用于生成对话场景**

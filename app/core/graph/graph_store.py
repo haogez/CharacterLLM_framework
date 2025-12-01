@@ -40,8 +40,8 @@ class GraphStore:
                  password: str = "zyh123456",
                  database: str = "neo4j",
                  embedding: Optional[Any] = None,
-                 index_name: str = "impressions", # 为印象节点指定索引
-                 text_node_property: str = "impression_content" # 指定用于向量化的节点属性
+                 index_name: str = "impressions", # legacy param (unused after removing Impression)
+                 text_node_property: str = "impression_content" # legacy param (unused after removing Impression)
                  ):
         self.uri = uri
         self.user = user
@@ -52,61 +52,10 @@ class GraphStore:
         self.temp_csv_dir = "./temp_csv"
         os.makedirs(self.temp_csv_dir, exist_ok=True)
 
-        print("- 初始化 OpenAI Embeddings -")
-        try:
-            # 新版 langchain-openai 的正确写法（base_url 需要显式写出）
-            self.embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small",
-                api_key=os.environ.get("OPENAI_API_KEY"),
-                base_url=os.environ.get("OPENAI_BASE_URL")  # 关键：新版要求显式写出 base_url
-            )
-            print("✅ OpenAI Embeddings 初始化成功。")
-        except Exception as e:
-            print(f"❌ OpenAI Embeddings 初始化失败: {e}")
-            import traceback as tb
-            tb.print_exc()
-            self.embeddings = None
-            self.neo4j_vector_impressions = None
-
-
-        # --- 初始化 Neo4jVector 实例 ---
-        # 确保 embeddings 成功初始化后才尝试初始化 Neo4jVector
-        if self.embeddings is not None:
-            try:
-                dim = len(self.embeddings.embed_query("ping"))
-            except Exception:
-                dim = 1536
-
-            try:
-                self._ensure_vector_index(
-                    index_name="impression_embeddings",
-                    label="Impression",
-                    vector_prop="impression_embedding",
-                    dimension=dim,
-                )
-                self.neo4j_vector_impressions = Neo4jVector.from_existing_index(
-                    embedding=self.embeddings, # 现在 self.embeddings 已存在且配置正确
-                    url=self.uri,
-                    username=self.user,
-                    password=self.password,
-                    database=self.database,
-                    embedding_node_property="impression_embedding", # 这个属性名需要在导入时创建
-                    text_node_property=self.text_node_property,
-                    index_name="impression_embeddings", # 确保索引名称正确且维度匹配
-                    search_type="vector",
-                    node_label="Impression",
-                )
-                print("✅ Neo4jVector (impressions) 初始化成功。")
-            except Exception as e:
-                print(f"❌ Neo4jVector (impressions) 初始化失败: {e}")
-                print("   这可能导致语义搜索功能不可用，但应用将继续启动。")
-                import traceback as tb
-                tb.print_exc() # 打印完整堆栈跟踪
-                self.neo4j_vector_impressions = None
-        else:
-            print("⚠️  由于 Embeddings 初始化失败，跳过 Neo4jVector 初始化。")
-            self.neo4j_vector_impressions = None
-        print("--- Neo4jVector 实例初始化完成 ---")
+        # 不再使用 Impression 节点的向量检索，直接跳过 Embeddings 初始化，避免无关的错误日志
+        self.embeddings = None
+        self.neo4j_vector_impressions = None
+        print("--- Impression/向量检索已禁用，专注事件节点 ---")
         # 使用通过挂载卷共享的目录
         self.temp_csv_dir = "/zhouyuhao/zhouyuhao_data_new/import"
         os.makedirs(self.temp_csv_dir, exist_ok=True)
@@ -175,25 +124,8 @@ class GraphStore:
             session.run(
                 """
                 MATCH (c:Character)
-                WHERE NOT exists(c.relationship_to_protagonist)
+                WHERE c.relationship_to_protagonist IS NULL
                 SET c.relationship_to_protagonist = 'UNKNOWN'
-                """
-            )
-
-            # 印象内容、向量字段、强度
-            session.run(
-                """
-                MATCH (i:Impression)
-                WHERE NOT exists(i.impression_content)
-                SET i.impression_content = coalesce(i.content, '')
-                """
-            )
-
-            session.run(
-                """
-                MATCH (i:Impression)
-                WHERE NOT exists(i.strength)
-                SET i.strength = 50
                 """
             )
 
@@ -201,7 +133,7 @@ class GraphStore:
             session.run(
                 """
                 MATCH (e:Event)
-                WHERE NOT exists(e.event_content)
+                WHERE e.event_content IS NULL
                 SET e.event_content = coalesce(e.content, e.title, '')
                 """
             )
@@ -210,10 +142,10 @@ class GraphStore:
             session.run(
                 """
                 MERGE (_schema_c:SchemaAnchor {name:'__schema_char'})
-                MERGE (_schema_i:SchemaAnchor {name:'__schema_imp'})
                 MERGE (_schema_e:SchemaAnchor {name:'__schema_evt'})
-                MERGE (_schema_c)-[:HAS_IMPRESSION]->(_schema_i)
-                MERGE (_schema_i)-[:OF_EVENT]->(_schema_e)
+                MERGE (_schema_t:SchemaAnchor {name:'__schema_time'})
+                MERGE (_schema_c)-[:PROTAGONIST_EVENT]->(_schema_e)
+                MERGE (_schema_e)-[:EVENT_TIME]->(_schema_t)
                 """
             )
 
@@ -1083,6 +1015,7 @@ class GraphStore:
                 participants = memory.get("participants", []) or []
                 raw_dialogue = memory.get("dialogue_content", [])
                 normalized_dialogues = self._normalize_dialogues(raw_dialogue)
+                place_id = f"place_{hash(memory.get('scene'))}" if memory.get("scene") else None
 
                 _write_node({
                     "node_id:ID": event_id,
@@ -1121,7 +1054,7 @@ class GraphStore:
 
                 if memory.get("scene"):
                     _write_node({
-                        "node_id:ID": f"{event_id}_location",
+                        "node_id:ID": place_id,
                         "label:LABEL": "Place",
                         "name": memory.get("scene"),
                         "role": "location",
@@ -1223,7 +1156,7 @@ class GraphStore:
                 if memory.get("scene"):
                     _write_rel({
                         "start_id:START_ID": event_id,
-                        "end_id:END_ID": f"{event_id}_location",
+                        "end_id:END_ID": place_id,
                         "type:TYPE": "EVENT_LOCATION",
                         "description": "事件发生地点"
                     })
