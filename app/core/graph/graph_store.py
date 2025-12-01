@@ -786,6 +786,11 @@ class GraphStore:
             print(f"向量检索失败: {e}")
             return []
 
+    # Neo4jVector helper for semantic search (兼容旧调用名称)
+    def semantic_search_impressions(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+        """语义检索印象的别名包装，避免历史调用报错。"""
+        return self.vector_search_impressions(query=query, character_id="", top_k=k)
+
     def get_character_impressions(self, character_id: str) -> List[Dict[str, Any]]:
         """
         获取指定角色的所有印象及其关联的事件。

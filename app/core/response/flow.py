@@ -87,20 +87,30 @@ class ResponseFlow:
         return decision
 
     def _store_pending_supplement(self, character_id: str, payload: Dict[str, Any]) -> None:
-        """将补充响应缓存到收件箱，供下一轮发送。"""
+        """将补充响应缓存到收件箱，供下一轮在主回复中融合。"""
         self.pending_supplements.setdefault(character_id, []).append(payload)
-        log_warning("补充响应已存入待发送队列，等待下一次对话触发。", indent=1)
+        log_warning("补充响应已存入待发送队列，等待后续对话融合。", indent=1)
 
-    def _emit_pending_supplement(self, character_id: str) -> Optional[Dict[str, Any]]:
-        """尝试弹出一条挂起的补充响应。"""
-        queue = self.pending_supplements.get(character_id, [])
-        if not queue:
-            return None
-        payload = queue.pop(0)
-        if not queue:
-            self.pending_supplements.pop(character_id, None)
-        log_success("检测到上轮遗留的补充响应，准备本轮一并发送。", indent=1)
-        return payload
+    def _pop_pending_supplements(self, character_id: str) -> List[Dict[str, Any]]:
+        """取出并清空挂起的补充响应，供本轮融合，不再单独发送。"""
+        pending = self.pending_supplements.pop(character_id, [])
+        if pending:
+            log_success("检测到上轮遗留的补充响应，将在本轮融合。", indent=1)
+        return pending
+
+    @staticmethod
+    def _merge_content(base: str, addition: str) -> str:
+        """将补充内容柔和地并入主回复，保持自然衔接。"""
+        base = base.strip()
+        addition = addition.strip()
+        if not addition:
+            return base
+        if not base:
+            return addition
+        # 若主回复已以句号等结束，换行追加；否则添加连接词。
+        if re.search(r"[。！？!?]$", base):
+            return f"{base}\n{addition}"
+        return f"{base}。{addition}"
     
     # --- 新增：通用的角色上下文构建函数 ---
     def _build_user_context(self, character_data: Dict[str, Any], user_character_data: Optional[Dict[str, Any]], scene: Optional[str] = None, dialogue_type: Optional[str] = None) -> str:
@@ -242,10 +252,7 @@ class ResponseFlow:
                      dialogue_type: Optional[str] = None
                      ) -> AsyncGenerator[Dict[str, Any], None]:
         start_time = time.time()
-        log_chat_start(character_id, user_input)
-
-        response_count = 0
-        pending_supplement = self._emit_pending_supplement(character_id)
+        pending_supplements = self._pop_pending_supplements(character_id)
 
         prefetch_task = None
         if self.graph_store:
@@ -272,54 +279,32 @@ class ResponseFlow:
             )
         )
 
-        # 线程 1：主线对话回复
+        # 线程 1：主线对话回复（融合上轮待补充）
         primary_resp = await self._generate_direct_response(
-            character_data, user_input, conversation_history, user_character_data, scene, dialogue_type
+            character_data, user_input, conversation_history, user_character_data, scene, dialogue_type, pending_supplements
         )
         if not primary_response_future.done():
             primary_response_future.set_result(primary_resp)
 
-        response_payload = {
-            "type": "dialogue",
-            "content": primary_resp,
-            "timestamp": round(time.time() - start_time, 2)
-        }
-        log_chat_response("DIALOGUE", character_id, user_input, primary_resp, response_payload["timestamp"])
-        response_count += 1
-        yield response_payload
-
         memory_result = await memory_task
+
+        combined_content = primary_resp
+        combined_memories: List[Dict[str, Any]] = []
 
         if memory_result and memory_result.get("action") == "send":
             payload = memory_result["payload"]
-            payload["timestamp"] = round(time.time() - start_time, 2)
-            log_chat_response(
-                "SUPPLEMENTARY",
-                character_id,
-                user_input,
-                payload.get("content", ""),
-                payload["timestamp"],
-                len(payload.get("memories", [])),
-            )
-            response_count += 1
-            yield payload
+            combined_content = self._merge_content(combined_content, payload.get("content", ""))
+            combined_memories.extend(payload.get("memories", []))
         elif memory_result and memory_result.get("action") == "defer":
             self._store_pending_supplement(character_id, memory_result["payload"])
 
-        if pending_supplement:
-            pending_supplement["timestamp"] = round(time.time() - start_time, 2)
-            log_chat_response(
-                "SUPPLEMENTARY (PENDING)",
-                character_id,
-                user_input,
-                pending_supplement.get("content", ""),
-                pending_supplement["timestamp"],
-                len(pending_supplement.get("memories", [])),
-            )
-            response_count += 1
-            yield pending_supplement
-
-        log_chat_complete(character_id, user_input, time.time() - start_time, response_count)
+        response_payload = {
+            "type": "dialogue",
+            "content": combined_content,
+            "memories": combined_memories,
+            "timestamp": round(time.time() - start_time, 2)
+        }
+        yield response_payload
 
     async def _memory_thread(
         self,
@@ -790,15 +775,24 @@ class ResponseFlow:
                                       conversation_history: List[Dict[str, str]] = None,
                                       user_character_data: Optional[Dict[str, Any]] = None, # 确保接收此参数
                                       scene: Optional[str] = None,
-                                      dialogue_type: Optional[str] = None
+                                      dialogue_type: Optional[str] = None,
+                                      pending_supplements: Optional[List[Dict[str, Any]]] = None
                                       ) -> str:
         # 使用通用的上下文构建函数
         user_context = self._build_user_context(character_data, user_character_data, scene, dialogue_type)
+
+        supplement_hint = ""
+        if pending_supplements:
+            pending_texts = [p.get("content", "") for p in pending_supplements if p.get("content")]
+            if pending_texts:
+                joined = "\n".join([f"- {text}" for text in pending_texts])
+                supplement_hint = f"\n\n你之前想补充的要点：\n{joined}\n请在不违背当前上下文的情况下，自然融入这些要点，不要重复上一轮的措辞。"
 
         simplified_system_prompt = f"""
         你是{character_data.get('name')}。{user_context}
         需基于以下人设快速回答（100-150字），贴合人设和语言风格。
         人设：{character_data.get('values')} | {character_data.get('hobby')} | {character_data.get('living_habit')} | 语言风格：{character_data.get('language_style')}
+        {supplement_hint}
         """
         history_str = "\n".join([f"{'用户' if t['role']=='user' else '你'}: {t['content']}" for t in (conversation_history or [])])
         user_prompt = f"{history_str}\n用户：{user_input}\n你的回答："
