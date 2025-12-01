@@ -47,6 +47,7 @@ class GraphStore:
         self.user = user
         self.password = password
         self.database = database
+        self.text_node_property = text_node_property
         self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
         self.temp_csv_dir = "./temp_csv"
         os.makedirs(self.temp_csv_dir, exist_ok=True)
@@ -90,8 +91,10 @@ class GraphStore:
                     password=self.password,
                     database=self.database,
                     embedding_node_property="impression_embedding", # 这个属性名需要在导入时创建
+                    text_node_property=self.text_node_property,
                     index_name="impression_embeddings", # 确保索引名称正确且维度匹配
                     search_type="vector",
+                    node_label="Impression",
                 )
                 print("✅ Neo4jVector (impressions) 初始化成功。")
             except Exception as e:
@@ -122,6 +125,11 @@ class GraphStore:
             print(f"--- 成功连接到 Neo4j '{self.database}' ---")
             print(f"--- URI: {self.uri} ---")
             print("--- Neo4j 连接初始化完成 ---")
+            # 初始化后做一次轻量级的模式修复，避免因缺失属性或关系类型导致的查询警告
+            try:
+                self._backfill_core_schema()
+            except Exception as exc:
+                log_warning(f"Schema backfill skipped: {exc}")
         except Exception as e:
             print(f"连接 Neo4j 失败: {e}")
             import traceback
@@ -143,16 +151,73 @@ class GraphStore:
 
                 print(f"ℹ️  未找到向量索引 '{index_name}'，正在创建（维度: {dimension}）...")
                 session.run(
-                    "CALL db.index.vector.createNodeIndex($name, $label, $prop, $dim, 'cosine')",
-                    name=index_name,
-                    label=label,
-                    prop=vector_prop,
+                    f"""
+                    CREATE VECTOR INDEX {index_name} IF NOT EXISTS
+                    FOR (n:{label}) ON (n.{vector_prop})
+                    OPTIONS {{
+                        indexConfig: {{
+                            `vector.dimensions`: $dim,
+                            `vector.similarity_function`: 'cosine'
+                        }}
+                    }}
+                    """,
                     dim=dimension,
                 )
                 print(f"✅ 向量索引 '{index_name}' 创建完成。")
             except Exception as e:
                 print(f"⚠️  检查/创建向量索引 '{index_name}' 失败: {e}")
                 print("   语义检索可能不可用，请手动检查 Neo4j 配置。")
+
+    def _backfill_core_schema(self) -> None:
+        """回填核心属性并生成样板关系，避免 Neo4j 查询时的缺失警告。"""
+        with self.driver.session(database=self.database) as session:
+            # 角色的关系字段
+            session.run(
+                """
+                MATCH (c:Character)
+                WHERE NOT exists(c.relationship_to_protagonist)
+                SET c.relationship_to_protagonist = 'UNKNOWN'
+                """
+            )
+
+            # 印象内容、向量字段、强度
+            session.run(
+                """
+                MATCH (i:Impression)
+                WHERE NOT exists(i.impression_content)
+                SET i.impression_content = coalesce(i.content, '')
+                """
+            )
+
+            session.run(
+                """
+                MATCH (i:Impression)
+                WHERE NOT exists(i.strength)
+                SET i.strength = 50
+                """
+            )
+
+            # 事件内容
+            session.run(
+                """
+                MATCH (e:Event)
+                WHERE NOT exists(e.event_content)
+                SET e.event_content = coalesce(e.content, e.title, '')
+                """
+            )
+
+            # 建立模式锚点以注册关系类型（避免 relationship type does not exist 警告）
+            session.run(
+                """
+                MERGE (_schema_c:SchemaAnchor {name:'__schema_char'})
+                MERGE (_schema_i:SchemaAnchor {name:'__schema_imp'})
+                MERGE (_schema_e:SchemaAnchor {name:'__schema_evt'})
+                MERGE (_schema_c)-[:HAS_IMPRESSION]->(_schema_i)
+                MERGE (_schema_i)-[:OF_EVENT]->(_schema_e)
+                """
+            )
+
+            log_info("Schema backfill completed for core properties and anchor relations.")
 
     def close(self):
         if self.driver:
@@ -225,6 +290,7 @@ class GraphStore:
                 node_properties["app_id"] = app_id
                 # 确保标签为 Character
                 node_properties["is_main_character"] = node_properties.get("is_main_character", False)
+                node_properties.setdefault("relationship_to_protagonist", "UNKNOWN")
 
                 # 将所有嵌套结构转为JSON字符串
                 for key, value in node_properties.items():
@@ -430,7 +496,7 @@ class GraphStore:
                 impression_properties = impression_data.copy()
                 impression_properties.pop("id", None)
                 impression_properties["app_id"] = impression_app_id
-                
+
                 # 计算印象强度
                 impression_properties["strength"] = self.calculate_impression_strength(character_data, event_data)
                 
@@ -450,6 +516,9 @@ class GraphStore:
                     # 强度高，保留完整细节
                     impression_properties["content"] = full_content
                     impression_properties["is_faded"] = False
+
+                # 为向量检索提供统一的文本字段
+                impression_properties.setdefault("impression_content", impression_properties.get("content", ""))
 
                 # 将所有嵌套结构转为JSON字符串
                 for key, value in impression_properties.items():
@@ -492,6 +561,7 @@ class GraphStore:
             "source_character_app_id": character_app_id,
             "event_app_id": event_app_id,
             "content": impression_content, # 使用已处理的内容
+            "impression_content": impression_content,
             "timestamp": datetime.now().isoformat()
         }
 
@@ -713,7 +783,7 @@ class GraphStore:
                     MATCH (main:Character {app_id: $main_id}), (other:Character {app_id: $other_id})
                     OPTIONAL MATCH (main)-[:PROTAGONIST_EVENT]->(e:Event)<-[:ASSOCIATED_EVENT]-(other)
                     WITH main, other, collect(e.app_id) AS shared_events
-                    RETURN other.relationship_to_protagonist AS rel, shared_events
+                    RETURN COALESCE(other.relationship_to_protagonist, 'UNKNOWN') AS rel, shared_events
                     """,
                     main_id=main_character_id,
                     other_id=other_character_id
@@ -771,6 +841,11 @@ class GraphStore:
         except Exception as e:
             print(f"向量检索失败: {e}")
             return []
+
+    # Neo4jVector helper for semantic search (兼容旧调用名称)
+    def semantic_search_impressions(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
+        """语义检索印象的别名包装，避免历史调用报错。"""
+        return self.vector_search_impressions(query=query, character_id="", top_k=k)
 
     def get_character_impressions(self, character_id: str) -> List[Dict[str, Any]]:
         """
