@@ -20,6 +20,23 @@ from app.core.utils.log_utils import log_info, log_success, log_warning, log_err
 class StoryBasedMemoryGenerator:
     def __init__(self, character_llm: CharacterLLM):
         self.character_llm = character_llm
+
+    async def should_generate_scene(self, age: float, experience: str) -> (bool, str):
+        """使用 LLM 判断该年龄的经历是否需要生成结构化对话场景。"""
+        heuristic_negative = any(keyword in experience for keyword in ["未发生重大事件", "生活平稳", "平静度日", "没有特别的事"])
+        system_prompt = (
+            "你是剧情筛选助手，判断给定的年龄经历是否包含值得生成结构化对话的重大或情节性事件。"
+            "如果经历只是描述平稳或无事件，则返回 generate=false。请以 JSON 输出，例如 {\"generate\": false, \"reason\": \"生活平稳，无重大事件\"}."
+        )
+        user_prompt = f"年龄：{age}岁，经历描述：{experience}"
+        try:
+            resp = await self.character_llm.client.generate_structured_response(system_prompt, user_prompt)
+            generate = bool(resp.get("generate", not heuristic_negative))
+            reason = resp.get("reason", "") or ("LLM 判定无需生成" if not generate else "LLM 判定需要生成")
+            return generate, reason
+        except Exception as exc:
+            log_warning(f"LLM 判断结构化对话生成需求失败，使用启发式: {exc}")
+            return not heuristic_negative, "启发式判断"
         self.age_ranges = [
             {"label": "婴幼儿期", "start": 0, "end": 2},
             {"label": "童年期", "start": 3, "end": 11},
@@ -150,6 +167,7 @@ class StoryBasedMemoryGenerator:
         1.  **时间线一致性**: 故事必须从0岁写到当前设定的{main_character.get('age')}岁，所有past_experience中提到的关键事件都必须在对应年龄段被详细描述。
         2.  **格式化经历**: **核心修改**：严格按照以下格式生成背景故事，每个年龄（或年龄段）用冒号分隔：
             "0岁时：[具体事件或描述]。1岁时：[具体事件或描述]。2岁时：[具体事件或描述]。3岁时：[具体事件或描述]。... 直至当前角色年龄 {main_character.get('age')}岁。[最后可选：一段连贯的文字总结角色的整体背景和性格形成过程，但这部分不强制，重点是前面的格式化经历]。"
+        2.1 **事件要素完整**：关键年份必须写清楚起因、经过、结果，不能只写结果或性格结论，例如不要写"被排挤后变内向"，而要描述事件发生的背景、冲突过程和具体后果。
         3.  **人设锚定**: 严格体现personality五维分数、living_habit、values、dislike、appearance、social_pattern等所有字段。
         4.  **关联角色互动**: 自然地融入关联角色，描述他们与主角色的互动，确保互动符合双方人设。例如，如果主角色social_pattern为“孤僻”，与他人的互动应体现这一点。
         5.  **因果关系**: 明确past_experience中的事件如何导致当前的性格、habit、values等。
@@ -456,6 +474,10 @@ class StoryBasedMemoryGenerator:
             if age > main_character.get('age', 100): # 跳过超出当前年龄的经历
                 continue
             for i, exp_desc in enumerate(experiences):
+                should_generate, skip_reason = await self.should_generate_scene(age, exp_desc)
+                if not should_generate:
+                    log_info(f" - 跳过 {age} 岁场景 {i+1}：{skip_reason}")
+                    continue
                 log_info(f" - 为 {age} 岁生成场景 {i+1}...")
 
                 # **修改：Prompt 用于生成对话场景**

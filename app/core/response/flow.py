@@ -235,7 +235,7 @@ class ResponseFlow:
         text = f"{query} {scene or ''}".strip()
         loop = asyncio.get_running_loop()
         try:
-            results = await loop.run_in_executor(None, self.graph_store.vector_search_impressions, text, character_id, 6)
+            results = await loop.run_in_executor(None, self.graph_store.vector_search, "Event", text, 6)
             self.prefetched_memories[character_id] = results
             return results
         except Exception as e:
@@ -406,9 +406,9 @@ class ResponseFlow:
         elif character_id in self.prefetched_memories:
             prefetched = self.prefetched_memories.get(character_id, [])
 
-        # --- GraphRAG 检索开始 (只检索印象节点) ---
+        # --- GraphRAG 检索开始 (基于事件节点) ---
         log_section_start("记忆线程：GraphRAG 检索", "-")
-        log_info("开始从 Neo4j 图谱进行 GraphRAG 检索 (仅印象节点)...", indent=1)
+        log_info("开始从 Neo4j 图谱进行 GraphRAG 检索 (事件节点)...", indent=1)
         log_info(f"查询文本: {user_input}", indent=1)
         log_info(f"目标角色ID: {character_id}", indent=1)
 
@@ -419,128 +419,109 @@ class ResponseFlow:
                 with self.graph_store.driver.session(database=self.graph_store.database) as session:
                     # --- 步骤 1: 关键词匹配 ---
                     log_debug("尝试关键词匹配...", indent=1)
-                    # ... (之前的关键词匹配逻辑保持不变) ...
-                    # 1.1 提取用户输入中的关键词
                     keywords = re.findall(r'[\u4e00-\u9fff\w]+', user_input)
                     common_words = {"你", "我", "他", "她", "它", "是", "的", "了", "在", "有", "和", "跟", "与", "吗", "呢", "吧", "啊", "呀", "还", "就", "才", "又", "再", "更", "最", "很", "挺", "太", "非常", "特别", "十分", "有点", "稍微", "几乎", "几乎不", "完全", "全部", "都", "全部", "所有", "每个", "一些", "几个", "某些", "别的", "其他", "另外", "这", "那", "这些", "那些", "这个", "那个", "这里", "那里", "这儿", "那儿", "现在", "然后", "如果", "因为", "所以", "但是", "然而", "虽然", "尽管", "为了", "关于", "对于", "关于", "把", "被", "让", "叫", "请", "让", "使", "帮", "给", "为", "对", "向", "往", "朝", "用", "以", "比", "跟", "和", "同", "与", "及", "以及", "或", "或者", "还是"}
                     keywords = [kw.lower() for kw in keywords if len(kw) > 1 and kw not in common_words]
                     log_debug(f"提取关键词: {keywords}", indent=2)
 
+                    raw_impressions_keyword = []
                     if keywords:
-                        # 1.2 构建 Cypher 查询，使用 OR 连接的 CONTAINS
-                        or_conditions_impression = []
+                        or_conditions_event = []
                         params = {"character_id": character_id}
                         for i, kw in enumerate(keywords):
-                            or_conditions_impression.append(f"toLower(i.impression_content) CONTAINS toLower($kw{i})")
+                            or_conditions_event.append(f"toLower(coalesce(e.event_content, e.context, '')) CONTAINS toLower($kw{i})")
                             params[f"kw{i}"] = kw
-                        where_clause_keyword = " OR ".join(or_conditions_impression)
+                        where_clause_keyword = " OR ".join(or_conditions_event)
                         query_keyword = f"""
-                        MATCH (c:Character {{app_id: $character_id}})-->(i:Impression)-->(e:Event)
+                        MATCH (c:Character {{app_id: $character_id}})-[:PROTAGONIST_EVENT|ASSOCIATED_EVENT]->(e:Event)
                         WHERE {where_clause_keyword}
-                        RETURN i, e, i.strength AS strength, 'keyword' AS source
-                        ORDER BY strength DESC
-                        LIMIT 10 // 可以适当增加，因为后续会合并去重
+                        RETURN e, 'keyword' AS source
+                        LIMIT 10
                         """
                         log_debug(f"执行关键词查询: {query_keyword}", indent=2)
                         log_debug(f"参数: {params}", indent=2)
                         result_keyword = session.run(query_keyword, **params)
-                        raw_impressions_keyword = []
                         for record in result_keyword:
+                            event_dict = dict(record["e"])
                             raw_impressions_keyword.append({
-                                "impression": dict(record["i"]),
-                                "event": dict(record["e"]),
-                                "strength": record["strength"],
-                                "source": record["source"]
+                                "impression": {
+                                    "impression_content": event_dict.get("event_content") or event_dict.get("context", ""),
+                                    "app_id": event_dict.get("app_id")
+                                },
+                                "event": event_dict,
+                                "strength": event_dict.get("importance", {}).get("score", 50) if isinstance(event_dict.get("importance"), dict) else 50,
+                                "source": record["source"],
                             })
                         log_info(f"关键词查询返回 {len(raw_impressions_keyword)} 条记录", indent=2)
                     else:
-                        raw_impressions_keyword = []
                         log_debug("关键词提取为空，跳过关键词查询", indent=2)
 
                     # --- 步骤 2: 结构化查询 ---
                     log_debug("尝试结构化查询...", indent=1)
-                    # ... (之前的结构化查询逻辑保持不变) ...
-                    # 2.1 尝试从用户输入中提取结构化信息 (这里简化处理，实际可能需要 NLP)
-                    location_names = [kw for kw in keywords if len(kw) > 2] # 简单过滤，认为较长的词可能是地点
+                    location_names = [kw for kw in keywords if len(kw) > 2]
 
                     raw_impressions_structured = []
                     if location_names:
-                         # 尝试匹配 Event 节点的 event_content
-                         or_conditions_location = []
-                         params_loc = {"character_id": character_id}
-                         for i, loc_kw in enumerate(location_names):
-                             or_conditions_location.append(f"toLower(e.event_content) CONTAINS toLower($loc_kw{i})")
-                             params_loc[f"loc_kw{i}"] = loc_kw
-                         where_clause_location = " OR ".join(or_conditions_location)
-                         query_structured = f"""
-                         MATCH (c:Character {{app_id: $character_id}})-->(i:Impression)-->(e:Event)
-                         WHERE {where_clause_location}
-                         RETURN i, e, i.strength AS strength, 'structured_location' AS source
-                         ORDER BY strength DESC
-                         LIMIT 5
-                         """
-                         log_debug(f"执行结构化地点查询: {query_structured}", indent=2)
-                         log_debug(f"参数: {params_loc}", indent=2)
-                         result_structured = session.run(query_structured, **params_loc)
-                         for record in result_structured:
+                        or_conditions_location = []
+                        params_loc = {"character_id": character_id}
+                        for i, loc_kw in enumerate(location_names):
+                            or_conditions_location.append(f"toLower(coalesce(e.event_content, e.context, '')) CONTAINS toLower($loc_kw{i})")
+                            params_loc[f"loc_kw{i}"] = loc_kw
+                        where_clause_location = " OR ".join(or_conditions_location)
+                        query_structured = f"""
+                        MATCH (c:Character {{app_id: $character_id}})-[:PROTAGONIST_EVENT|ASSOCIATED_EVENT]->(e:Event)
+                        WHERE {where_clause_location}
+                        RETURN e, 'structured_location' AS source
+                        LIMIT 5
+                        """
+                        log_debug(f"执行结构化地点查询: {query_structured}", indent=2)
+                        log_debug(f"参数: {params_loc}", indent=2)
+                        result_structured = session.run(query_structured, **params_loc)
+                        for record in result_structured:
+                            event_dict = dict(record["e"])
                             raw_impressions_structured.append({
-                                "impression": dict(record["i"]),
-                                "event": dict(record["e"]),
-                                "strength": record["strength"],
-                                "source": record["source"]
+                                "impression": {
+                                    "impression_content": event_dict.get("event_content") or event_dict.get("context", ""),
+                                    "app_id": event_dict.get("app_id")
+                                },
+                                "event": event_dict,
+                                "strength": event_dict.get("importance", {}).get("score", 50) if isinstance(event_dict.get("importance"), dict) else 50,
+                                "source": record["source"],
                             })
-                         log_info(f"结构化地点查询返回 {len(raw_impressions_structured)} 条记录", indent=2)
+                        log_info(f"结构化地点查询返回 {len(raw_impressions_structured)} 条记录", indent=2)
 
                     # --- 步骤 3: 向量搜索 (语义搜索) ---
                     log_debug("尝试向量搜索 (语义搜索)...", indent=1)
                     # 3.1 搜索与查询语义相关的 Event
                     # semantic_results_events = self.graph_store.semantic_search_events(user_input, k=5)
-                    # 3.2 搜索与查询语义相关的 Impression
-                    semantic_results_impressions = self.graph_store.semantic_search_impressions(user_input, k=5)
+                    # 3.2 搜索与查询语义相关的 Impression（已停用，返回空列表）
+                    semantic_results_impressions = []
 
-                    #3.3 将 LangChain 返回的格式转换为与之前一致的 raw_impressions 格式
-                    # raw_impressions_semantic_events = []  # 不再需要
-                    raw_impressions_semantic_impressions = []
-                    for item in semantic_results_impressions:
-                        # item 结构: {"impression": {...}, "event": {...}, "character": {...}, "relevance_score": score, "source": "vector_impression"}
-                        impression_data = item["impression"]
-                        event_data = item["event"]
-                        if impression_data: # 确保 impression_data 存在
-                            raw_impressions_semantic_impressions.append({
-                                "impression": impression_data,
-                                "event": event_data,
-                                "strength": item.get("relevance_score", 0.5) * 100,
-                                "source": item["source"]
-                            })
-
-                    raw_impressions_semantic = raw_impressions_semantic_impressions  # 只保留印象搜索结果
-                    log_info(f"向量搜索返回 {len(raw_impressions_semantic)} 条记录 (仅来自印象)", indent=2)
+                    # 向量搜索依赖 Impression 节点，已禁用
+                    raw_impressions_semantic = []
+                    log_info(f"向量搜索返回 {len(raw_impressions_semantic)} 条记录 (Impression 向量检索已关闭)", indent=2)
 
 
                     # --- 步骤 4: 传统语义搜索 (使用 textdistance) ---
                     log_debug("尝试传统语义搜索 (基于textdistance)...", indent=1)
                     query_for_semantic = """
-                    MATCH (c:Character {app_id: $character_id})-->(i:Impression)-->(e:Event)
-                    WHERE i.strength > 30 // 选择强度较高的印象进行语义比较
-                    RETURN i, e, i.strength AS strength
-                    ORDER BY strength DESC
-                    LIMIT 10 // 减少数量，因为向量搜索更准确
+                    MATCH (c:Character {app_id: $character_id})-[:PROTAGONIST_EVENT|ASSOCIATED_EVENT]->(e:Event)
+                    RETURN e
+                    LIMIT 20
                     """
                     result_for_semantic = session.run(query_for_semantic, character_id=character_id)
                     candidates_for_semantic = []
                     for record in result_for_semantic:
                         candidates_for_semantic.append({
-                            "impression": dict(record["i"]),
                             "event": dict(record["e"]),
-                            "strength": record["strength"]
                         })
 
                     semantic_results_legacy = []
                     for candidate in candidates_for_semantic:
-                        impression_content = candidate["impression"].get("impression_content", "")
+                        event_content = candidate["event"].get("event_content") or candidate["event"].get("context", "")
                         try:
                             import textdistance
-                            similarity = textdistance.jaro_winkler(user_input, impression_content)
+                            similarity = textdistance.jaro_winkler(user_input, event_content)
                             if similarity > 0.3:
                                 semantic_results_legacy.append({
                                     "candidate": candidate,
@@ -551,15 +532,23 @@ class ResponseFlow:
                             break
 
                     semantic_results_legacy.sort(key=lambda x: x["similarity"], reverse=True)
-                    top_k_semantic_legacy = 2 # 选择前 K 个
-                    raw_impressions_semantic_legacy = [r["candidate"] for r in semantic_results_legacy[:top_k_semantic_legacy]]
-                    for r in raw_impressions_semantic_legacy:
-                        r["source"] = "semantic_legacy"
+                    top_k_semantic_legacy = 2
+                    raw_impressions_semantic_legacy = []
+                    for r in semantic_results_legacy[:top_k_semantic_legacy]:
+                        event_dict = r["candidate"]["event"]
+                        raw_impressions_semantic_legacy.append({
+                            "impression": {
+                                "impression_content": event_dict.get("event_content") or event_dict.get("context", ""),
+                                "app_id": event_dict.get("app_id")
+                            },
+                            "event": event_dict,
+                            "strength": 50,
+                            "source": "semantic_legacy",
+                        })
                     log_info(
                         f"传统语义搜索返回 {len(raw_impressions_semantic_legacy)} 条记录 (基于阈值和 Top-{top_k_semantic_legacy})",
                         indent=2,
                     )
-
 
                     # --- 合并和去重 ---
                     log_debug("合并关键词、结构化、向量语义、传统语义搜索结果...", indent=1)
@@ -569,11 +558,11 @@ class ResponseFlow:
                         raw_impressions_semantic +
                         raw_impressions_semantic_legacy
                     )
-                    # 去重：基于 impression_app_id
+                    # 去重：基于 event_app_id
                     seen_ids = set()
                     all_raw_impressions = []
                     for imp in all_raw_impressions_unfiltered:
-                        imp_id = imp["impression"].get("app_id")
+                        imp_id = imp["event"].get("app_id")
                         if imp_id and imp_id not in seen_ids:
                             all_raw_impressions.append(imp)
                             seen_ids.add(imp_id)
@@ -589,10 +578,8 @@ class ResponseFlow:
                                     props_dict.update(additional_props)
                                 except (base64.binascii.Error, json.JSONDecodeError, TypeError) as e:
                                     log_warning(f"解码{node_name} {props_dict.get('app_id', 'unknown')} 的 properties 时出错: {e}")
-                                    pass # 如果解码失败，保留原始 properties 字段
-                            # 移除 Base64 编码的 properties 字段
+                                    pass
                             props_dict.pop("properties", None)
-
 
             except Exception as e:
                 log_error(f"GraphRAG 检索失败: {e}")
@@ -611,18 +598,17 @@ class ResponseFlow:
         # --- GraphRAG 检索结束 ---
 
         if prefetched:
-            vector_impressions = []
+            vector_events = []
             for item in prefetched:
-                vector_impressions.append({
-                    "impression": {
-                        "impression_content": item.get("content", ""),
+                vector_events.append({
+                    "event": {
+                        "event_content": item.get("content", ""),
                         "app_id": item.get("app_id", str(uuid.uuid4()))
                     },
-                    "event": {},
                     "strength": item.get("score", 70),
                     "source": "vector_prefetch"
                 })
-            all_raw_impressions = vector_impressions or all_raw_impressions
+            all_raw_impressions = vector_events or all_raw_impressions
 
         # --- 构建与用户角色相关的上下文 (增强版) ---
         # ... (保持 user_context 逻辑不变) ...
@@ -632,12 +618,10 @@ class ResponseFlow:
         # --- 格式化检索到的印象 (作为回忆) ---
         formatted_impressions = []
         for idx, imp in enumerate(all_raw_impressions, 1):
-            # **修正：从 impression_content 获取内容**
-            impression_content = imp.get("impression", {}).get("impression_content", imp.get("impression", {}).get("content", "我似乎记得..."))
+            event_content = imp.get("event", {}).get("event_content") or imp.get("event", {}).get("context", "我似乎记得...")
             event_title = imp.get("event", {}).get("event_title", imp.get("event", {}).get("title", "某个事件"))
             strength = imp.get("strength", "未知强度")
             source = imp.get("source", "unknown") # 添加来源信息
-            # 可以根据强度或内容长度调整“回忆”的语气，例如强度低的可能更模糊
             if strength < 40:
                  tone_prefix = "我有点模糊地记得... "
             elif strength < 70:
@@ -648,7 +632,7 @@ class ResponseFlow:
             formatted_impressions.append(f"""
             【第{idx}段回忆 (来源: {source})】
             - 事件：{event_title}
-            - 回忆内容：{tone_prefix}{impression_content}
+            - 回忆内容：{tone_prefix}{event_content}
             - 印象强度：{strength}/100
             """)
         # ---
@@ -705,41 +689,43 @@ class ResponseFlow:
         # 将 impression 数据格式化为 MemoryResponse 期望的格式
         processed_impressions_as_memories = []
         for imp in all_raw_impressions:
-            impression_data = imp.get("impression", {})
             event_data = imp.get("event", {})
-            # 尝试从印象或事件中获取时间信息
-            time_info = event_data.get("time", impression_data.get("time", {}))
-            # 尝试从印象或事件中获取情感信息
-            emotion_info = event_data.get("emotion", impression_data.get("emotion", {}))
-            # 尝试从印象或事件中获取重要性信息
-            importance_info = event_data.get("importance", impression_data.get("importance", {"score": imp.get("strength", 50)}))
-            # 尝试从印象或事件中获取行为影响信息
-            behavior_impact_info = event_data.get("behavior_impact", impression_data.get("behavior_impact", {}))
-            # 尝试从印象或事件中获取触发系统信息
-            trigger_system_info = event_data.get("trigger_system", impression_data.get("trigger_system", {}))
-            # 尝试从印象或事件中获取记忆扭曲信息
-            memory_distortion_info = event_data.get("memory_distortion", impression_data.get("memory_distortion", {}))
+            time_info = event_data.get("time") if isinstance(event_data.get("time"), dict) else {}
+            emotion_info = event_data.get("emotion") if isinstance(event_data.get("emotion"), dict) else {}
+            importance_info = event_data.get("importance") if isinstance(event_data.get("importance"), dict) else {"score": imp.get("strength", 50)}
+            behavior_impact_info = event_data.get("behavior_impact") if isinstance(event_data.get("behavior_impact"), dict) else {}
+            trigger_system_info = event_data.get("trigger_system") if isinstance(event_data.get("trigger_system"), dict) else {}
+            memory_distortion_info = event_data.get("memory_distortion") if isinstance(event_data.get("memory_distortion"), dict) else {}
 
-            # 构造 MemoryResponse 对象所需的数据
+            default_time = {"age": 0, "period": "未知", "specific": "未知"}
+            default_emotion = {"immediate": [], "reflected": [], "residual": "", "intensity": 0}
+            default_importance = {"score": importance_info.get("score", 5), "reason": importance_info.get("reason", ""), "frequency": importance_info.get("frequency", "")}
+            default_behavior = {"habit_formed": "", "attitude_change": "", "response_pattern": ""}
+            default_trigger = {"sensory": [], "contextual": [], "emotional": []}
+            default_distortion = {"exaggerated": "", "downplayed": "", "reason": ""}
+
+            participants = event_data.get("participants", [])
+            if isinstance(participants, str):
+                participants = [p.strip() for p in participants.replace(';', ',').split(',') if p.strip()]
+
             memory_entry = {
-                "id": impression_data.get("app_id", str(uuid.uuid4())), # 使用印象节点的 app_id
+                "id": event_data.get("app_id", str(uuid.uuid4())),
                 "title": event_data.get("event_title", event_data.get("title", "回忆片段")),
-                # **修正：使用 impression_content 作为 content**
-                "content": impression_data.get("impression_content", impression_data.get("content", "一段模糊的回忆")),
-                "time": time_info,
-                "emotion": emotion_info,
-                "importance": importance_info,
-                "behavior_impact": behavior_impact_info,
-                "trigger_system": trigger_system_info,
-                "memory_distortion": memory_distortion_info,
-                "location": event_data.get("location", impression_data.get("location", "")),
-                "participants": event_data.get("participants", impression_data.get("participants", [])),
-                "tags": event_data.get("tags", impression_data.get("tags", [])),
-                "duration": event_data.get("duration", impression_data.get("duration", "")),
-                "context_before": event_data.get("context_before", impression_data.get("context_before", "")),
-                "context_after": event_data.get("context_after", impression_data.get("context_after", "")),
-                "relevance": imp.get("strength", 50) / 100.0, # 使用强度作为相关性
-                "source": imp.get("source", "unknown") # 添加来源信息
+                "content": event_data.get("event_content") or event_data.get("context", "一段模糊的回忆"),
+                "time": time_info or default_time,
+                "emotion": emotion_info or default_emotion,
+                "importance": default_importance,
+                "behavior_impact": behavior_impact_info or default_behavior,
+                "trigger_system": trigger_system_info or default_trigger,
+                "memory_distortion": memory_distortion_info or default_distortion,
+                "location": event_data.get("location", ""),
+                "participants": participants,
+                "tags": event_data.get("tags", []),
+                "duration": event_data.get("duration", ""),
+                "context_before": event_data.get("context_before", ""),
+                "context_after": event_data.get("context_after", ""),
+                "relevance": imp.get("strength", 50) / 100.0,
+                "source": imp.get("source", "unknown")
             }
             processed_impressions_as_memories.append(memory_entry)
 
