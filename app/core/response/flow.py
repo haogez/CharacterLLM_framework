@@ -244,74 +244,51 @@ class ResponseFlow:
         start_time = time.time()
         log_chat_start(character_id, user_input)
 
-        # 线程1：对话主线；线程2：记忆检索补充
         response_count = 0
-
-        # 先检查是否有挂起的补充响应需要在本轮发送
         pending_supplement = self._emit_pending_supplement(character_id)
 
-        # 启动后台记忆预取
         prefetch_task = None
         if self.graph_store:
             prefetch_task = asyncio.create_task(self._background_memory_prefetch(character_id, user_input, scene))
 
         segments = self._segment_user_input(user_input)
         strategy = self._plan_memory_strategy(segments, dialogue_type, conversation_history)
-        needs_memory = await self._needs_memory(character_data, user_input, user_character_data, scene, dialogue_type)
 
-        if not needs_memory:
-            direct_resp = await self._generate_direct_response(
-                character_data, user_input, conversation_history, user_character_data, scene, dialogue_type
+        # 线程 2：记忆检索与补充线程提前启动，等待主线回复结果
+        primary_response_future: asyncio.Future = asyncio.get_running_loop().create_future()
+        memory_task = asyncio.create_task(
+            self._memory_thread(
+                character_data,
+                user_input,
+                primary_response_future,
+                character_id,
+                conversation_history,
+                user_character_data,
+                scene,
+                dialogue_type,
+                prefetch_task,
+                strategy,
+                segments,
             )
-            response_payload = {
-                "type": "direct",
-                "content": direct_resp,
-                "timestamp": round(time.time() - start_time, 2)
-            }
-            log_chat_response("DIRECT", character_id, user_input, direct_resp, response_payload["timestamp"])
-            response_count += 1
-            yield response_payload
+        )
 
-            if pending_supplement:
-                pending_supplement["timestamp"] = round(time.time() - start_time, 2)
-                log_chat_response(
-                    "SUPPLEMENTARY (PENDING)",
-                    character_id,
-                    user_input,
-                    pending_supplement.get("content", ""),
-                    pending_supplement["timestamp"],
-                    len(pending_supplement.get("memories", [])),
-                )
-                response_count += 1
-                yield pending_supplement
-
-            log_chat_complete(character_id, user_input, time.time() - start_time, response_count)
-            return
-
-        immediate_resp = await self._generate_immediate_response(
+        # 线程 1：主线对话回复
+        primary_resp = await self._generate_direct_response(
             character_data, user_input, conversation_history, user_character_data, scene, dialogue_type
         )
-        immediate_payload = {
-            "type": "immediate",
-            "content": immediate_resp,
+        if not primary_response_future.done():
+            primary_response_future.set_result(primary_resp)
+
+        response_payload = {
+            "type": "dialogue",
+            "content": primary_resp,
             "timestamp": round(time.time() - start_time, 2)
         }
-        log_chat_response("IMMEDIATE", character_id, user_input, immediate_resp, immediate_payload["timestamp"])
+        log_chat_response("DIALOGUE", character_id, user_input, primary_resp, response_payload["timestamp"])
         response_count += 1
-        yield immediate_payload
+        yield response_payload
 
-        memory_result = await self._memory_thread(
-            character_data,
-            user_input,
-            immediate_resp,
-            character_id,
-            conversation_history,
-            user_character_data,
-            scene,
-            dialogue_type,
-            prefetch_task,
-            strategy,
-        )
+        memory_result = await memory_task
 
         if memory_result and memory_result.get("action") == "send":
             payload = memory_result["payload"]
@@ -348,7 +325,7 @@ class ResponseFlow:
         self,
         character_data: Dict[str, Any],
         user_input: str,
-        immediate_response: str,
+        primary_response_future: Optional[asyncio.Future],
         character_id: str,
         conversation_history: Optional[List[Dict[str, str]]],
         user_character_data: Optional[Dict[str, Any]],
@@ -356,16 +333,27 @@ class ResponseFlow:
         dialogue_type: Optional[str],
         prefetch_task: Optional[asyncio.Task],
         strategy: str,
+        segments: List[str],
     ) -> Optional[Dict[str, Any]]:
         """记忆检索与补充响应线程，负责检索、生成并决定是否立刻发送。"""
         log_section_start("记忆线程：检索与生成", "-")
         log_info("线程启动，准备检索记忆。", indent=1)
+        log_info(f"分片: {segments}", indent=1)
+        immediate_response = ""
+        if primary_response_future:
+            if primary_response_future.done():
+                try:
+                    immediate_response = primary_response_future.result()
+                except Exception as exc:
+                    log_warning(f"读取主线回复时出错: {exc}", indent=1)
+            else:
+                log_debug("主线回复尚未完成，先行启动记忆检索。", indent=1)
         try:
             supplementary = await self._generate_supplementary_response(
                 character_data,
                 user_input,
-                immediate_response,
                 character_id,
+                immediate_response,
                 conversation_history,
                 user_character_data,
                 scene,
@@ -407,8 +395,8 @@ class ResponseFlow:
     async def _generate_supplementary_response(self,
                                              character_data: Dict[str, Any],
                                              user_input: str,
-                                             immediate_response: str,
                                              character_id: str,
+                                             immediate_response: str = "",
                                              conversation_history: List[Dict[str, str]] = None,
                                              user_character_data: Optional[Dict[str, Any]] = None,
                                              scene: Optional[str] = None,

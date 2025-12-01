@@ -234,6 +234,7 @@ class GraphStore:
                 node_properties["app_id"] = app_id
                 # 确保标签为 Character
                 node_properties["is_main_character"] = node_properties.get("is_main_character", False)
+                node_properties.setdefault("relationship_to_protagonist", "UNKNOWN")
 
                 # 将所有嵌套结构转为JSON字符串
                 for key, value in node_properties.items():
@@ -439,7 +440,7 @@ class GraphStore:
                 impression_properties = impression_data.copy()
                 impression_properties.pop("id", None)
                 impression_properties["app_id"] = impression_app_id
-                
+
                 # 计算印象强度
                 impression_properties["strength"] = self.calculate_impression_strength(character_data, event_data)
                 
@@ -459,6 +460,9 @@ class GraphStore:
                     # 强度高，保留完整细节
                     impression_properties["content"] = full_content
                     impression_properties["is_faded"] = False
+
+                # 为向量检索提供统一的文本字段
+                impression_properties.setdefault("impression_content", impression_properties.get("content", ""))
 
                 # 将所有嵌套结构转为JSON字符串
                 for key, value in impression_properties.items():
@@ -501,6 +505,7 @@ class GraphStore:
             "source_character_app_id": character_app_id,
             "event_app_id": event_app_id,
             "content": impression_content, # 使用已处理的内容
+            "impression_content": impression_content,
             "timestamp": datetime.now().isoformat()
         }
 
