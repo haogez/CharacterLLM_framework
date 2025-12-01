@@ -235,7 +235,7 @@ class ResponseFlow:
         text = f"{query} {scene or ''}".strip()
         loop = asyncio.get_running_loop()
         try:
-            results = await loop.run_in_executor(None, self.graph_store.vector_search_impressions, text, character_id, 6)
+            results = await loop.run_in_executor(None, self.graph_store.vector_search, "Event", text, 6)
             self.prefetched_memories[character_id] = results
             return results
         except Exception as e:
@@ -598,18 +598,17 @@ class ResponseFlow:
         # --- GraphRAG 检索结束 ---
 
         if prefetched:
-            vector_impressions = []
+            vector_events = []
             for item in prefetched:
-                vector_impressions.append({
-                    "impression": {
-                        "impression_content": item.get("content", ""),
+                vector_events.append({
+                    "event": {
+                        "event_content": item.get("content", ""),
                         "app_id": item.get("app_id", str(uuid.uuid4()))
                     },
-                    "event": {},
                     "strength": item.get("score", 70),
                     "source": "vector_prefetch"
                 })
-            all_raw_impressions = vector_impressions or all_raw_impressions
+            all_raw_impressions = vector_events or all_raw_impressions
 
         # --- 构建与用户角色相关的上下文 (增强版) ---
         # ... (保持 user_context 逻辑不变) ...
@@ -619,12 +618,10 @@ class ResponseFlow:
         # --- 格式化检索到的印象 (作为回忆) ---
         formatted_impressions = []
         for idx, imp in enumerate(all_raw_impressions, 1):
-            # **修正：从 impression_content 获取内容**
-            impression_content = imp.get("impression", {}).get("impression_content", imp.get("impression", {}).get("content", "我似乎记得..."))
+            event_content = imp.get("event", {}).get("event_content") or imp.get("event", {}).get("context", "我似乎记得...")
             event_title = imp.get("event", {}).get("event_title", imp.get("event", {}).get("title", "某个事件"))
             strength = imp.get("strength", "未知强度")
             source = imp.get("source", "unknown") # 添加来源信息
-            # 可以根据强度或内容长度调整“回忆”的语气，例如强度低的可能更模糊
             if strength < 40:
                  tone_prefix = "我有点模糊地记得... "
             elif strength < 70:
@@ -635,7 +632,7 @@ class ResponseFlow:
             formatted_impressions.append(f"""
             【第{idx}段回忆 (来源: {source})】
             - 事件：{event_title}
-            - 回忆内容：{tone_prefix}{impression_content}
+            - 回忆内容：{tone_prefix}{event_content}
             - 印象强度：{strength}/100
             """)
         # ---
@@ -692,41 +689,43 @@ class ResponseFlow:
         # 将 impression 数据格式化为 MemoryResponse 期望的格式
         processed_impressions_as_memories = []
         for imp in all_raw_impressions:
-            impression_data = imp.get("impression", {})
             event_data = imp.get("event", {})
-            # 尝试从印象或事件中获取时间信息
-            time_info = event_data.get("time", impression_data.get("time", {}))
-            # 尝试从印象或事件中获取情感信息
-            emotion_info = event_data.get("emotion", impression_data.get("emotion", {}))
-            # 尝试从印象或事件中获取重要性信息
-            importance_info = event_data.get("importance", impression_data.get("importance", {"score": imp.get("strength", 50)}))
-            # 尝试从印象或事件中获取行为影响信息
-            behavior_impact_info = event_data.get("behavior_impact", impression_data.get("behavior_impact", {}))
-            # 尝试从印象或事件中获取触发系统信息
-            trigger_system_info = event_data.get("trigger_system", impression_data.get("trigger_system", {}))
-            # 尝试从印象或事件中获取记忆扭曲信息
-            memory_distortion_info = event_data.get("memory_distortion", impression_data.get("memory_distortion", {}))
+            time_info = event_data.get("time") if isinstance(event_data.get("time"), dict) else {}
+            emotion_info = event_data.get("emotion") if isinstance(event_data.get("emotion"), dict) else {}
+            importance_info = event_data.get("importance") if isinstance(event_data.get("importance"), dict) else {"score": imp.get("strength", 50)}
+            behavior_impact_info = event_data.get("behavior_impact") if isinstance(event_data.get("behavior_impact"), dict) else {}
+            trigger_system_info = event_data.get("trigger_system") if isinstance(event_data.get("trigger_system"), dict) else {}
+            memory_distortion_info = event_data.get("memory_distortion") if isinstance(event_data.get("memory_distortion"), dict) else {}
 
-            # 构造 MemoryResponse 对象所需的数据
+            default_time = {"age": 0, "period": "未知", "specific": "未知"}
+            default_emotion = {"immediate": [], "reflected": [], "residual": "", "intensity": 0}
+            default_importance = {"score": importance_info.get("score", 5), "reason": importance_info.get("reason", ""), "frequency": importance_info.get("frequency", "")}
+            default_behavior = {"habit_formed": "", "attitude_change": "", "response_pattern": ""}
+            default_trigger = {"sensory": [], "contextual": [], "emotional": []}
+            default_distortion = {"exaggerated": "", "downplayed": "", "reason": ""}
+
+            participants = event_data.get("participants", [])
+            if isinstance(participants, str):
+                participants = [p.strip() for p in participants.replace(';', ',').split(',') if p.strip()]
+
             memory_entry = {
-                "id": impression_data.get("app_id", str(uuid.uuid4())), # 使用印象节点的 app_id
+                "id": event_data.get("app_id", str(uuid.uuid4())),
                 "title": event_data.get("event_title", event_data.get("title", "回忆片段")),
-                # **修正：使用 impression_content 作为 content**
-                "content": impression_data.get("impression_content", impression_data.get("content", "一段模糊的回忆")),
-                "time": time_info,
-                "emotion": emotion_info,
-                "importance": importance_info,
-                "behavior_impact": behavior_impact_info,
-                "trigger_system": trigger_system_info,
-                "memory_distortion": memory_distortion_info,
-                "location": event_data.get("location", impression_data.get("location", "")),
-                "participants": event_data.get("participants", impression_data.get("participants", [])),
-                "tags": event_data.get("tags", impression_data.get("tags", [])),
-                "duration": event_data.get("duration", impression_data.get("duration", "")),
-                "context_before": event_data.get("context_before", impression_data.get("context_before", "")),
-                "context_after": event_data.get("context_after", impression_data.get("context_after", "")),
-                "relevance": imp.get("strength", 50) / 100.0, # 使用强度作为相关性
-                "source": imp.get("source", "unknown") # 添加来源信息
+                "content": event_data.get("event_content") or event_data.get("context", "一段模糊的回忆"),
+                "time": time_info or default_time,
+                "emotion": emotion_info or default_emotion,
+                "importance": default_importance,
+                "behavior_impact": behavior_impact_info or default_behavior,
+                "trigger_system": trigger_system_info or default_trigger,
+                "memory_distortion": memory_distortion_info or default_distortion,
+                "location": event_data.get("location", ""),
+                "participants": participants,
+                "tags": event_data.get("tags", []),
+                "duration": event_data.get("duration", ""),
+                "context_before": event_data.get("context_before", ""),
+                "context_after": event_data.get("context_after", ""),
+                "relevance": imp.get("strength", 50) / 100.0,
+                "source": imp.get("source", "unknown")
             }
             processed_impressions_as_memories.append(memory_entry)
 
