@@ -478,6 +478,14 @@ async def generate_and_store_fine_grained_memories(
         if not imported:
             log_warning("CSV 在线导入失败，请在数据库离线状态下使用 neo4j-admin import 再试。")
 
+        # 基于结构化对话生成主角对白名单的态度，并写入图谱
+        attitudes = await story_memory_generator.infer_character_attitudes(main_character, related_characters, extracted_memories)
+        if attitudes:
+            graph_store.upsert_character_attitudes(character_id, attitudes)
+            log_success(f"已写入 {len(attitudes)} 条主角对白名单角色的态度印象")
+        else:
+            log_warning("未生成任何态度印象，后续对话可能缺少情感偏好参考。")
+
         memory_gen_time = time.time() - memory_start
         # 由于所有数据都已通过内部流程注入
         log_memory_generation_summary(character_id, character_name, len(extracted_memories), imported_char_to_char_count, memory_gen_time)

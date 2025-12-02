@@ -722,8 +722,11 @@ class GraphStore:
                     """
                     MATCH (main:Character {app_id: $main_id}), (other:Character {app_id: $other_id})
                     OPTIONAL MATCH (main)-[:PROTAGONIST_EVENT]->(e:Event)<-[:ASSOCIATED_EVENT]-(other)
-                    WITH main, other, collect(e.app_id) AS shared_events
-                    RETURN COALESCE(other.relationship_to_protagonist, 'UNKNOWN') AS rel, shared_events
+                    OPTIONAL MATCH (main)-[att:ATTITUDE]->(other)
+                    WITH main, other, att, collect(e.app_id) AS shared_events
+                    RETURN COALESCE(other.relationship_to_protagonist, 'UNKNOWN') AS rel,
+                           shared_events,
+                           att.summary AS attitude
                     """,
                     main_id=main_character_id,
                     other_id=other_character_id
@@ -732,12 +735,13 @@ class GraphStore:
                 record = result.single()
                 rel_type = record["rel"] if record and record["rel"] else "UNKNOWN"
                 shared_events = record["shared_events"] if record and record["shared_events"] else []
+                attitude = record["attitude"] if record and record["attitude"] else "未知"
 
                 description = "" if rel_type != "UNKNOWN" else "共同经历的事件数量" if shared_events else "未知"
                 if rel_type == "UNKNOWN" and shared_events:
                     description = f"共同参与 {len(shared_events)} 个事件"
 
-                return {"type": rel_type, "description": description}
+                return {"type": rel_type, "description": description, "attitude": attitude}
             except Exception as e:
                 print(f"获取角色关系失败: {e}")
                 return {"type": "UNKNOWN", "description": "查询失败"}
@@ -793,6 +797,39 @@ class GraphStore:
         except Exception as e:
             log_warning(f"{label} 向量搜索失败: {e}")
             return []
+
+    def upsert_character_attitudes(self, main_character_id: str, attitudes: List[Dict[str, Any]]) -> None:
+        """为主角写入对关联角色的态度印象。"""
+        if not attitudes:
+            return
+
+        with self.driver.session(database=self.database) as session:
+            for attitude in attitudes:
+                target_id = attitude.get("target_id")
+                if not target_id:
+                    continue
+                summary = attitude.get("summary", "未知")
+                tone = attitude.get("tone", "neutral")
+                evidence = attitude.get("evidence", "")
+                try:
+                    session.run(
+                        """
+                        MATCH (main:Character {app_id: $main_id})
+                        MATCH (target:Character {app_id: $target_id})
+                        MERGE (main)-[r:ATTITUDE]->(target)
+                        SET r.summary = $summary,
+                            r.tone = $tone,
+                            r.evidence = $evidence,
+                            r.last_updated = timestamp()
+                        """,
+                        main_id=main_character_id,
+                        target_id=target_id,
+                        summary=summary,
+                        tone=tone,
+                        evidence=evidence,
+                    )
+                except Exception as exc:
+                    log_warning(f"写入态度关系失败: {exc}")
 
 
     def save_entities_and_relationships_to_csv(self,
