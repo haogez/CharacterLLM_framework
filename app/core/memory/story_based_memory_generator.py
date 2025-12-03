@@ -750,3 +750,62 @@ class StoryBasedMemoryGenerator:
 
         # 关系链由 GraphStore 基于参与者和时间线生成，这里只返回实体
         return [], [], [] # (entities, non_event_relationships, char_to_char_relationships)
+
+    async def infer_character_attitudes(self, main_character: Dict[str, Any], related_characters: List[Dict[str, Any]], memories: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """基于结构化对话为主角构建对关联角色的态度印象。"""
+        if not related_characters:
+            return []
+
+        scene_samples = []
+        for scene in memories[:5]:
+            dialogue = scene.get("dialogue_content", "")
+            topic = scene.get("topic", "")
+            scene_samples.append(f"- 主题: {topic} | 对话: {dialogue[:120]}")
+
+        related_profiles = []
+        for rc in related_characters:
+            related_profiles.append({
+                "id": rc.get("id") or rc.get("app_id"),
+                "name": rc.get("name"),
+                "role": rc.get("relationship_to_protagonist", "未知"),
+                "traits": rc.get("personality", {}),
+            })
+
+        system_prompt = """
+        你是角色态度分析助手。请根据主角的设定和与关联角色的互动，生成主角对白名单每个关联角色的态度印象。
+
+        输出 JSON 数组，每个元素包含：
+        - target_id: 关联角色的唯一标识
+        - summary: 一句话总结主角对该角色的态度（如“谨慎疏远”“信任依赖”“保持戒备”）
+        - tone: 态度倾向（positive/neutral/negative）
+        - evidence: 支撑该态度的互动或事件概述
+        只返回 JSON，不要添加解释。
+        """
+
+        user_prompt = f"""
+        主角：{main_character.get('name')} | 性格：{json.dumps(main_character.get('personality', {}), ensure_ascii=False)} | 价值观：{main_character.get('values')}
+        关联角色列表：{json.dumps(related_profiles, ensure_ascii=False)}
+        对话样本：\n{chr(10).join(scene_samples)}
+        输出：
+        """
+
+        try:
+            raw = await self.character_llm.client.generate_response(system_prompt, user_prompt)
+            attitudes = json.loads(raw)
+            if isinstance(attitudes, list):
+                normalized = []
+                for att in attitudes:
+                    target_id = att.get("target_id") or att.get("id")
+                    if not target_id:
+                        continue
+                    normalized.append({
+                        "target_id": target_id,
+                        "summary": att.get("summary", "未知"),
+                        "tone": att.get("tone", "neutral"),
+                        "evidence": att.get("evidence", "")
+                    })
+                return normalized
+            log_warning("态度生成格式异常，未返回列表。")
+        except Exception as exc:
+            log_warning(f"态度生成失败: {exc}")
+        return []

@@ -35,6 +35,8 @@ class ResponseFlow:
         self.prefetch_tasks: Dict[str, asyncio.Task] = {}
         # 第二条“记忆检索与补充响应线程”的收件箱，用于跨轮延迟补充
         self.pending_supplements: Dict[str, List[Dict[str, Any]]] = {}
+        # 最近一次发送的补充内容，避免重复发送
+        self.last_supplements: Dict[str, str] = {}
         self.memory_type_rules = {
             "education": "需体现学习方式与思维模式的关联（如记忆中“如何学习”影响“现在如何思考”）",
             "work": "需包含职业技能与价值观的互动（如记忆中“解决问题的技能”反映“职业价值观”）",
@@ -88,6 +90,15 @@ class ResponseFlow:
 
     def _store_pending_supplement(self, character_id: str, payload: Dict[str, Any]) -> None:
         """将补充响应缓存到收件箱，供下一轮在主回复中融合。"""
+        content = (payload or {}).get("content", "").strip()
+        already_pending = [p.get("content", "").strip() for p in self.pending_supplements.get(character_id, []) if p.get("content")]
+        if content:
+            if content in already_pending:
+                log_warning("检测到重复的待补充内容，已跳过存入。", indent=1)
+                return
+            if self._is_redundant_supplement(self.last_supplements.get(character_id, ""), content):
+                log_warning("待补充内容与上次补充高度重合，已跳过存入。", indent=1)
+                return
         self.pending_supplements.setdefault(character_id, []).append(payload)
         log_warning("补充响应已存入待发送队列，等待后续对话融合。", indent=1)
 
@@ -97,6 +108,34 @@ class ResponseFlow:
         if pending:
             log_success("检测到上轮遗留的补充响应，将在本轮融合。", indent=1)
         return pending
+
+    @staticmethod
+    def _normalize_tokens(text: str) -> List[str]:
+        tokens = re.findall(r"[\u4e00-\u9fff]+|[a-zA-Z0-9_]+", text.lower())
+        return [t for t in tokens if t]
+
+    def _is_redundant_supplement(self, primary: str, supplement: str, last_sent: str = "") -> bool:
+        """判断补充内容是否与当前主回复或上次补充高度重复。"""
+        if not supplement:
+            return True
+        normalized_primary = self._normalize_tokens(primary)
+        normalized_supplement = self._normalize_tokens(supplement)
+        normalized_last = self._normalize_tokens(last_sent)
+
+        if supplement.strip() == primary.strip() or supplement.strip() == last_sent.strip():
+            return True
+
+        def _overlap_ratio(a: List[str], b: List[str]) -> float:
+            if not a or not b:
+                return 0.0
+            sa, sb = set(a), set(b)
+            inter = sa & sb
+            return len(inter) / min(len(sa), len(sb)) if min(len(sa), len(sb)) > 0 else 0.0
+
+        primary_overlap = _overlap_ratio(normalized_primary, normalized_supplement)
+        last_overlap = _overlap_ratio(normalized_last, normalized_supplement)
+
+        return primary_overlap >= 0.65 or last_overlap >= 0.65
 
     @staticmethod
     def _merge_content(base: str, addition: str) -> str:
@@ -129,6 +168,7 @@ class ResponseFlow:
             user_relationship_info = self.graph_store.get_relationship_between_characters(character_data.get('id'), user_character_data.get('id')) if self.graph_store else None
             relationship_type = user_relationship_info.get('type', 'UNKNOWN') if user_relationship_info else 'UNKNOWN'
             relationship_description = user_relationship_info.get('description', '未知') if user_relationship_info else '未知'
+            relationship_attitude = user_relationship_info.get('attitude', '未知') if user_relationship_info else '未知'
             # 主角色性格
             main_personality = character_data.get('personality', {})
             main_neuroticism = main_personality.get('neuroticism', 50)
@@ -164,6 +204,7 @@ class ResponseFlow:
             **你们之间的关系：**
             - 关系类型：{relationship_type}
             - 关系描述：{relationship_description}
+            - 当前态度：{relationship_attitude}
 
             {scene_hint}
             {dialogue_hint}
@@ -286,25 +327,33 @@ class ResponseFlow:
         if not primary_response_future.done():
             primary_response_future.set_result(primary_resp)
 
-        memory_result = await memory_task
+        primary_payload = {
+            "type": "dialogue",
+            "content": primary_resp,
+            "memories": [],
+            "timestamp": round(time.time() - start_time, 2)
+        }
+        yield primary_payload
 
-        combined_content = primary_resp
-        combined_memories: List[Dict[str, Any]] = []
+        memory_result = await memory_task
 
         if memory_result and memory_result.get("action") == "send":
             payload = memory_result["payload"]
-            combined_content = self._merge_content(combined_content, payload.get("content", ""))
-            combined_memories.extend(payload.get("memories", []))
+            supplement_content = payload.get("content", "")
+            if supplement_content.strip():
+                if self._is_redundant_supplement(primary_resp, supplement_content, self.last_supplements.get(character_id, "")):
+                    log_warning("补充内容与现有回复高度重合，跳过本轮补充发送。", indent=1)
+                else:
+                    supplement_payload = {
+                        "type": "dialogue",
+                        "content": supplement_content,
+                        "memories": payload.get("memories", []),
+                        "timestamp": round(time.time() - start_time, 2)
+                    }
+                    self.last_supplements[character_id] = supplement_content.strip()
+                    yield supplement_payload
         elif memory_result and memory_result.get("action") == "defer":
             self._store_pending_supplement(character_id, memory_result["payload"])
-
-        response_payload = {
-            "type": "dialogue",
-            "content": combined_content,
-            "memories": combined_memories,
-            "timestamp": round(time.time() - start_time, 2)
-        }
-        yield response_payload
 
     async def _memory_thread(
         self,
@@ -421,7 +470,39 @@ class ResponseFlow:
                     log_debug("尝试关键词匹配...", indent=1)
                     keywords = re.findall(r'[\u4e00-\u9fff\w]+', user_input)
                     common_words = {"你", "我", "他", "她", "它", "是", "的", "了", "在", "有", "和", "跟", "与", "吗", "呢", "吧", "啊", "呀", "还", "就", "才", "又", "再", "更", "最", "很", "挺", "太", "非常", "特别", "十分", "有点", "稍微", "几乎", "几乎不", "完全", "全部", "都", "全部", "所有", "每个", "一些", "几个", "某些", "别的", "其他", "另外", "这", "那", "这些", "那些", "这个", "那个", "这里", "那里", "这儿", "那儿", "现在", "然后", "如果", "因为", "所以", "但是", "然而", "虽然", "尽管", "为了", "关于", "对于", "关于", "把", "被", "让", "叫", "请", "让", "使", "帮", "给", "为", "对", "向", "往", "朝", "用", "以", "比", "跟", "和", "同", "与", "及", "以及", "或", "或者", "还是"}
+                    event_verbs = {"欺负", "打", "骂", "嘲笑", "帮助", "支持", "鼓励", "安慰", "拒绝", "推开", "同意", "拒绝", "冲突", "道歉", "安抚"}
                     keywords = [kw.lower() for kw in keywords if len(kw) > 1 and kw not in common_words]
+                    protagonist_name = (character_data.get("name") or "").lower()
+                    user_name = (user_character_data.get("name") if user_character_data else "").lower()
+                    def _is_protagonist_name(token: str) -> bool:
+                        return token == protagonist_name or (protagonist_name and token in protagonist_name) or (protagonist_name and protagonist_name in token)
+
+                    def _is_user_name(token: str) -> bool:
+                        return token == user_name or (user_name and token in user_name) or (user_name and user_name in token)
+
+                    filtered_keywords: List[str] = []
+                    for kw in keywords:
+                        if _is_protagonist_name(kw) or _is_user_name(kw):
+                            continue
+                        # 如果长 token 内包含事件动词，拆出动词和剩余前缀
+                        for verb in event_verbs:
+                            if verb in kw and verb != kw:
+                                verb_pos = kw.find(verb)
+                                if verb_pos > 0:
+                                    prefix = kw[:verb_pos]
+                                    if prefix and prefix not in common_words:
+                                        filtered_keywords.append(prefix)
+                                filtered_keywords.append(verb)
+                        filtered_keywords.append(kw)
+
+                    action_keywords = [verb for verb in event_verbs if verb in user_input]
+                    filtered_keywords.extend(action_keywords)
+                    filtered_keywords = list(dict.fromkeys(filtered_keywords))
+                    if not filtered_keywords:
+                        log_debug("关键词仅包含角色姓名，跳过关键词查询", indent=2)
+                        keywords = []
+                    else:
+                        keywords = filtered_keywords
                     log_debug(f"提取关键词: {keywords}", indent=2)
 
                     raw_impressions_keyword = []
@@ -492,14 +573,50 @@ class ResponseFlow:
 
                     # --- 步骤 3: 向量搜索 (语义搜索) ---
                     log_debug("尝试向量搜索 (语义搜索)...", indent=1)
-                    # 3.1 搜索与查询语义相关的 Event
-                    # semantic_results_events = self.graph_store.semantic_search_events(user_input, k=5)
-                    # 3.2 搜索与查询语义相关的 Impression（已停用，返回空列表）
-                    semantic_results_impressions = []
-
-                    # 向量搜索依赖 Impression 节点，已禁用
                     raw_impressions_semantic = []
-                    log_info(f"向量搜索返回 {len(raw_impressions_semantic)} 条记录 (Impression 向量检索已关闭)", indent=2)
+                    vector_results_events = self.graph_store.vector_search("Event", user_input, top_k=5)
+                    log_info(f"向量搜索返回 {len(vector_results_events)} 条事件记录", indent=2)
+                    for idx, vec in enumerate(vector_results_events, 1):
+                        log_debug(
+                            f"事件向量结果{idx}: score={vec.get('score')} | app_id={vec.get('app_id')} | 内容预览={str(vec.get('content', ''))[:30]}",
+                            indent=2,
+                        )
+                        event_app_id = vec.get("app_id") or str(uuid.uuid4())
+                        raw_impressions_semantic.append({
+                            "impression": {
+                                "impression_content": vec.get("content", ""),
+                                "app_id": event_app_id
+                            },
+                            "event": {
+                                "event_content": vec.get("content", ""),
+                                "app_id": event_app_id
+                            },
+                            "strength": vec.get("score", 70),
+                            "source": "vector_event",
+                        })
+
+                    # 补充：对对话内容进行向量召回，确保生成的台词能被识别到
+                    raw_impressions_dialogue_semantic = []
+                    vector_results_dialogue = self.graph_store.vector_search("Dialogue", user_input, top_k=5)
+                    log_info(f"向量搜索返回 {len(vector_results_dialogue)} 条对话记录", indent=2)
+                    for idx, vec in enumerate(vector_results_dialogue, 1):
+                        log_debug(
+                            f"对话向量结果{idx}: score={vec.get('score')} | app_id={vec.get('app_id')} | 内容预览={str(vec.get('content', ''))[:30]}",
+                            indent=2,
+                        )
+                        dialogue_app_id = vec.get("app_id") or str(uuid.uuid4())
+                        raw_impressions_dialogue_semantic.append({
+                            "impression": {
+                                "impression_content": vec.get("content", ""),
+                                "app_id": dialogue_app_id
+                            },
+                            "event": {
+                                "event_content": vec.get("content", ""),
+                                "app_id": dialogue_app_id
+                            },
+                            "strength": vec.get("score", 70),
+                            "source": "vector_dialogue",
+                        })
 
 
                     # --- 步骤 4: 传统语义搜索 (使用 textdistance) ---
@@ -556,6 +673,7 @@ class ResponseFlow:
                         raw_impressions_keyword +
                         raw_impressions_structured +
                         raw_impressions_semantic +
+                        raw_impressions_dialogue_semantic +
                         raw_impressions_semantic_legacy
                     )
                     # 去重：基于 event_app_id
